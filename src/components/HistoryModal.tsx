@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { History, X, Search, Trash2, Filter } from 'lucide-react';
+import { History, X, Search, Trash2, Filter, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { AuditLogEntry, ActionType } from '../types/matrix';
 
 interface HistoryModalProps {
@@ -7,16 +7,19 @@ interface HistoryModalProps {
   onClose: () => void;
   logs: AuditLogEntry[];
   onClearHistory: () => void;
+  onResetHistory: () => void;
 }
 
 export const HistoryModal: React.FC<HistoryModalProps> = ({
   isOpen,
   onClose,
   logs,
-  onClearHistory
+  onClearHistory,
+  onResetHistory
 }) => {
   const [filterType, setFilterType] = useState<string>('all');
   const [search, setSearch] = useState<string>('');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -147,15 +150,42 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
           )}
         </div>
 
+        {/* Toast feedback */}
+        {toastMessage && (
+          <div className="mx-4 my-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-xs font-bold flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
+
         {/* Footer */}
-        <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-          <button
-            onClick={onClearHistory}
-            className="flex items-center gap-1.5 text-xs font-semibold text-rose-600 hover:text-rose-800 transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            مسح سجل التعديلات
-          </button>
+        <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                onResetHistory();
+                setToastMessage('تمت استعادة السجل كما كان بنجاح ✓');
+                setTimeout(() => setToastMessage(null), 2500);
+              }}
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors"
+              title="إعادة السجل كما كان (استعادة السجلات الافتراضية)"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>إعادة السجل زي ما كان</span>
+            </button>
+
+            <button
+              onClick={() => {
+                onClearHistory();
+                setToastMessage('تم مسح سجل النشاط.');
+                setTimeout(() => setToastMessage(null), 2500);
+              }}
+              className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-800 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>مسح السجل</span>
+            </button>
+          </div>
 
           <button
             onClick={onClose}

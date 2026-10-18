@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, UserPlus, Check, UserCheck } from 'lucide-react';
-import { Worker, ProductionLine, Stage, SkillLevel } from '../types/matrix';
-import { SKILL_DEFINITIONS } from '../utils/constants';
+import { Worker, ProductionLine, Stage, SkillLevel, TerminologyConfig } from '../types/matrix';
+import { SKILL_DEFINITIONS, formatUnitName } from '../utils/constants';
 
 interface WorkerEditModalProps {
   isOpen: boolean;
@@ -11,6 +11,7 @@ interface WorkerEditModalProps {
   lines: ProductionLine[];
   currentLineId: string;
   stages: Stage[];
+  terminology?: TerminologyConfig;
 }
 
 export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
@@ -20,7 +21,8 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
   workerToEdit,
   lines,
   currentLineId,
-  stages
+  stages,
+  terminology
 }) => {
   const [empCode, setEmpCode] = useState('');
   const [name, setName] = useState('');
@@ -146,14 +148,18 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <div>
-                <label className="text-xs font-bold text-slate-800 block mb-1">خط الإنتاج:</label>
+                <label className="text-xs font-bold text-slate-800 block mb-1">
+                  {terminology?.lineLabel || 'خط الإنتاج'}:
+                </label>
                 <select
                   value={lineId}
                   onChange={(e) => setLineId(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900"
                 >
                   {lines.map(l => (
-                    <option key={l.id} value={l.id}>{l.name}</option>
+                    <option key={l.id} value={l.id}>
+                      {terminology ? formatUnitName(l.name, terminology) : l.name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -175,7 +181,7 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
             {/* Skills assignment */}
             <div className="pt-2">
               <label className="text-xs font-bold text-slate-800 block mb-2">
-                تقييم مهارات العامل على مراحل هذا الموديل (0 إلى 4):
+                تقييم مهارات العامل على {terminology?.stageLabelPlural || 'مراحل'} هذا الـ {terminology?.modelLabel || 'الموديل'} (0 إلى 4):
               </label>
               <div className="space-y-2 max-h-52 overflow-y-auto p-1 matrix-scroll">
                 {stages.map((stg) => {

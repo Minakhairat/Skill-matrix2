@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e1b4b" />
+    </linearGradient>
+    <linearGradient id="mGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#f1f5f9" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Rounded App Icon Background -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bgGrad)" stroke="#334155" stroke-width="2" filter="url(#shadow)"/>
+
+  <!-- Matrix Accent Dot (ILU Level Indicator) -->
+  <circle cx="50" cy="14" r="4" fill="#10b981" />
+  <circle cx="50" cy="14" r="2" fill="#6ee7b7" />
+
+  <!-- Bold Letter M Matching MatrixPro Logo -->
+  <path d="M16 46 V18 H23.5 L32 32.5 L40.5 18 H48 V46 H41.5 V27.5 L34 39.5 H30 L22.5 27.5 V46 Z" fill="url(#mGrad)"/>
+</svg>

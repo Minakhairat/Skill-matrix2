@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Stage, Worker, SkillLevel } from '../types/matrix';
+import { Stage, Worker, SkillLevel, TerminologyConfig } from '../types/matrix';
 import { calculateStageMetric, calculateWorkerFlexibility, generateRebalancingSuggestions } from '../utils/matrixCalculations';
+import { formatUnitName } from '../utils/constants';
 import { 
   AlertTriangle, 
   CheckCircle2, 
@@ -22,6 +23,7 @@ interface GapAnalysisDashboardProps {
   onUpdateWorkerSkill: (workerId: string, stageId: string, newLevel: SkillLevel) => void;
   onTransferWorkerLine: (workerId: string, targetLineId: string) => void;
   currentLineId: string;
+  terminology?: TerminologyConfig;
 }
 
 export const GapAnalysisDashboard: React.FC<GapAnalysisDashboardProps> = ({
@@ -31,7 +33,8 @@ export const GapAnalysisDashboard: React.FC<GapAnalysisDashboardProps> = ({
   lineName,
   onUpdateWorkerSkill,
   onTransferWorkerLine,
-  currentLineId
+  currentLineId,
+  terminology
 }) => {
   const [selectedStageFilter, setSelectedStageFilter] = useState<'all' | 'shortage' | 'covered'>('all');
   const [expandedStageId, setExpandedStageId] = useState<string | null>(null);
@@ -82,7 +85,7 @@ export const GapAnalysisDashboard: React.FC<GapAnalysisDashboardProps> = ({
             </span>
           </div>
           <div className="mt-1 text-[10px] sm:text-xs text-slate-500 truncate">
-            المراحل المستوفية للهدف
+            {terminology?.stageLabelPlural || 'المراحل'} المستوفية للهدف
           </div>
         </div>
 
@@ -101,14 +104,16 @@ export const GapAnalysisDashboard: React.FC<GapAnalysisDashboardProps> = ({
             </span>
           </div>
           <div className="mt-1 text-[10px] sm:text-xs text-slate-500 truncate">
-            محققو هدف الـ 3 مراحل
+            محققو هدف الـ 3 {terminology?.stageLabelPlural || 'مراحل'}
           </div>
         </div>
 
         {/* KPI 3: Stages with Shortage */}
         <div className="bg-white p-3 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] sm:text-xs font-semibold text-slate-500">مراحل بها عجز</span>
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-500">
+              {terminology?.stageLabelPlural || 'مراحل'} بها عجز
+            </span>
             <AlertTriangle className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${shortageStages > 0 ? 'text-amber-500' : 'text-slate-400'}`} />
           </div>
           <div className="mt-1.5 sm:mt-2.5 flex items-baseline gap-1.5">
@@ -117,7 +122,9 @@ export const GapAnalysisDashboard: React.FC<GapAnalysisDashboardProps> = ({
             }`}>
               {shortageStages}
             </span>
-            <span className="text-[10px] sm:text-xs text-slate-500">مرحلة</span>
+            <span className="text-[10px] sm:text-xs text-slate-500">
+              {terminology?.stageLabel || 'مرحلة'}
+            </span>
           </div>
           <div className="mt-1 text-[10px] sm:text-xs text-slate-500 truncate">
             تحتاج عمال مؤهلين

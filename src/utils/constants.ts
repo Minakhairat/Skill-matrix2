@@ -119,4 +119,59 @@ export const DEFAULT_LEADERSHIP: import('../types/matrix').PlantLeadership = {
   managerName: 'أ. أحمد فؤاد (مدير العمليات والإدارة)'
 };
 
+/**
+ * Format line/machine/department display names dynamically based on current terminology.
+ * When user selects "ماكينات", all line names adapt to "ماكينة ..."
+ * When user selects "أقسام", all line names adapt to "قسم ..."
+ * When user selects "خطوط إنتاج", names adapt to "خط ..."
+ */
+export function formatUnitName(name: string, terminology: import('../types/matrix').TerminologyConfig): string {
+  if (!name) return '';
+  if (terminology.preset === 'machines_molds') {
+    return name
+      .replace(/^خط\s*/, 'ماكينة ')
+      .replace(/خطوط\s*/g, 'ماكينات ')
+      .replace(/\(Line\s+([A-Z0-9]+)\)/gi, '(Machine $1)')
+      .replace(/^قسم\s*/, 'ماكينة ');
+  }
+  if (terminology.preset === 'departments_products') {
+    return name
+      .replace(/^خط\s*/, 'قسم ')
+      .replace(/خطوط\s*/g, 'أقسام ')
+      .replace(/\(Line\s+([A-Z0-9]+)\)/gi, '(Dept $1)')
+      .replace(/^ماكينة\s*/, 'قسم ');
+  }
+  // lines_models
+  return name
+    .replace(/^ماكينة\s*/, 'خط ')
+    .replace(/ماكينات\s*/g, 'خطوط ')
+    .replace(/^قسم\s*/, 'خط ')
+    .replace(/\(Machine\s+([A-Z0-9]+)\)/gi, '(Line $1)')
+    .replace(/\(Dept\s+([A-Z0-9]+)\)/gi, '(Line $1)');
+}
+
+/**
+ * Format model / mold / product display names dynamically based on current terminology.
+ */
+export function formatSubUnitName(name: string, terminology: import('../types/matrix').TerminologyConfig): string {
+  if (!name) return '';
+  if (terminology.preset === 'machines_molds') {
+    return name
+      .replace(/^موديل\s*/, 'اسطمبة ')
+      .replace(/موديلات\s*/g, 'اسطمبات ')
+      .replace(/^منتج\s*/, 'اسطمبة ');
+  }
+  if (terminology.preset === 'departments_products') {
+    return name
+      .replace(/^موديل\s*/, 'منتج ')
+      .replace(/موديلات\s*/g, 'منتجات ')
+      .replace(/^اسطمبة\s*/, 'منتج ');
+  }
+  return name
+    .replace(/^اسطمبة\s*/, 'موديل ')
+    .replace(/اسطمبات\s*/g, 'موديلات ')
+    .replace(/^منتج\s*/, 'موديل ');
+}
+
+
 

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Worker, Stage, SkillLevel } from '../types/matrix';
+import { Worker, Stage, SkillLevel, TerminologyConfig } from '../types/matrix';
 import { SKILL_DEFINITIONS } from '../utils/constants';
 import { calculateWorkerFlexibility } from '../utils/matrixCalculations';
 import { 
@@ -28,6 +28,7 @@ interface WorkerProfilesViewProps {
   onOpenWorkerModal: (worker: Worker) => void;
   onEditWorker: (worker: Worker) => void;
   onDeleteWorker: (worker: Worker) => void;
+  terminology?: TerminologyConfig;
 }
 
 export const WorkerProfilesView: React.FC<WorkerProfilesViewProps> = ({
@@ -38,7 +39,8 @@ export const WorkerProfilesView: React.FC<WorkerProfilesViewProps> = ({
   onCloseWorkerModal,
   onOpenWorkerModal,
   onEditWorker,
-  onDeleteWorker
+  onDeleteWorker,
+  terminology
 }) => {
   const [filterStatus, setFilterStatus] = useState<'all' | 'met' | 'needs_training'>('all');
   const [search, setSearch] = useState<string>('');

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ProductionLine, Model, Worker, SkillLevel, Stage, AuditLogEntry, ActionType, TerminologyConfig, PlantLeadership } from './types/matrix';
+import { ProductionLine, Model, Worker, SkillLevel, Stage, AuditLogEntry, ActionType, TerminologyConfig, PlantLeadership, FullSystemBackup } from './types/matrix';
 import { generateInitialLines, generate400Workers } from './utils/mockGenerator';
 import { 
   DEFAULT_WORKSTATION_TARGET, 
@@ -346,6 +346,52 @@ export default function App() {
     localStorage.removeItem(STORAGE_KEY_HISTORY);
   };
 
+  const handleResetHistory = () => {
+    const initialLogs = loadInitialLogs();
+    setLogs(initialLogs);
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(initialLogs));
+    } catch (e) {}
+    logAction(
+      'target_changed',
+      'إعادة السجل كما كان (استعادة السجل الأصلي)',
+      'تمت إعادة ضبط سجل التدقيق والتعديلات إلى حالته الأصلية الافتراضية بنجاح.'
+    );
+  };
+
+  const handleRestoreFullBackup = (backup: FullSystemBackup) => {
+    if (backup.lines && backup.lines.length > 0) {
+      setLines(backup.lines);
+      setSelectedLineId(backup.lines[0].id);
+      if (backup.lines[0].models[0]) {
+        setSelectedModelId(backup.lines[0].models[0].id);
+      }
+    }
+    if (backup.workers) {
+      setWorkers(backup.workers);
+    }
+    if (backup.settings) {
+      if (backup.settings.targetWorkersPerStage) setTargetWorkersPerStage(backup.settings.targetWorkersPerStage);
+      if (backup.settings.targetStagesPerWorker) setTargetStagesPerWorker(backup.settings.targetStagesPerWorker);
+      if (backup.settings.minQualifiedLevel) setMinQualifiedLevel(backup.settings.minQualifiedLevel);
+    }
+    if (backup.terminology) {
+      setTerminology(backup.terminology);
+    }
+    if (backup.leadership) {
+      setLeadership(backup.leadership);
+    }
+    if (backup.logs && backup.logs.length > 0) {
+      setLogs(backup.logs);
+    }
+
+    logAction(
+      'data_imported',
+      'استعادة نسخة احتياطية شاملة للنظام',
+      `تمت استعادة كافة بيانات المصنع بنجاح (${backup.workers?.length || 0} عامل، ${backup.lines?.length || 0} ${backup.terminology?.lineLabelPlural || terminology.lineLabelPlural}).`
+    );
+  };
+
   const handleImportSuccess = (newWorkers: Worker[]) => {
     setWorkers(prev => {
       const updated = [...prev];
@@ -484,6 +530,7 @@ export default function App() {
                 setIsWorkerEditOpen(true);
               }}
               onDeleteWorker={(worker) => setWorkerToDelete(worker)}
+              terminology={terminology}
             />
           </div>
         )}
@@ -497,6 +544,7 @@ export default function App() {
             currentLineId={selectedLine.id}
             onUpdateWorkerSkill={handleUpdateWorkerSkill}
             onTransferWorkerLine={handleTransferWorkerLine}
+            terminology={terminology}
           />
         )}
 
@@ -508,6 +556,7 @@ export default function App() {
             lineWorkers={lineWorkers}
             allWorkers={workers}
             leadership={leadership}
+            terminology={terminology}
             onNavigateToMatrix={() => setActiveTab('matrix')}
           />
         )}
@@ -519,6 +568,7 @@ export default function App() {
             stages={currentStages}
             lineWorkers={lineWorkers}
             onOpenWorkerModal={(worker) => setSelectedWorkerForModal(worker)}
+            terminology={terminology}
           />
         )}
 
@@ -535,6 +585,7 @@ export default function App() {
               setIsWorkerEditOpen(true);
             }}
             onDeleteWorker={(worker) => setWorkerToDelete(worker)}
+            terminology={terminology}
           />
         )}
 
@@ -562,6 +613,7 @@ export default function App() {
             stages={currentStages}
             workers={lineWorkers}
             leadership={leadership}
+            terminology={terminology}
           />
         )}
       </main>
@@ -577,6 +629,8 @@ export default function App() {
         minQualifiedLevel={minQualifiedLevel}
         onUpdateMinQualifiedLevel={setMinQualifiedLevel}
         onApplyToAllStages={handleApplyToAllStages}
+        terminology={terminology}
+        onUpdateTerminology={handleUpdateTerminology}
       />
 
       <ImportExportModal
@@ -584,11 +638,20 @@ export default function App() {
         onClose={() => setIsImportExportOpen(false)}
         stages={currentStages}
         workers={workers}
+        lines={lines}
+        allWorkers={workers}
         lineName={selectedLine?.name || terminology.lineLabel}
         modelName={selectedModel?.name || terminology.modelLabel}
         currentLineId={selectedLine?.id || ''}
         onImportSuccess={handleImportSuccess}
         onReset400Workers={handleReset400Workers}
+        terminology={terminology}
+        leadership={leadership}
+        targetWorkersPerStage={targetWorkersPerStage}
+        targetStagesPerWorker={targetStagesPerWorker}
+        minQualifiedLevel={minQualifiedLevel}
+        logs={logs}
+        onRestoreFullBackup={handleRestoreFullBackup}
       />
 
       <WorkerEditModal
@@ -602,6 +665,7 @@ export default function App() {
         lines={lines}
         currentLineId={selectedLine?.id || ''}
         stages={currentStages}
+        terminology={terminology}
       />
 
       <ConfirmDeleteModal
@@ -621,6 +685,7 @@ export default function App() {
         onClose={() => setIsHistoryOpen(false)}
         logs={logs}
         onClearHistory={handleClearHistory}
+        onResetHistory={handleResetHistory}
       />
 
       {/* Dedicated Engineering Footer */}

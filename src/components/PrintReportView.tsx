@@ -1,6 +1,6 @@
-import React from 'react';
-import { ProductionLine, Model, Stage, Worker } from '../types/matrix';
+import { ProductionLine, Model, Stage, Worker, TerminologyConfig, PlantLeadership } from '../types/matrix';
 import { calculateStageMetric, calculateWorkerFlexibility } from '../utils/matrixCalculations';
+import { formatUnitName, formatSubUnitName } from '../utils/constants';
 import { Printer } from 'lucide-react';
 
 interface PrintReportViewProps {
@@ -8,7 +8,8 @@ interface PrintReportViewProps {
   model: Model;
   stages: Stage[];
   workers: Worker[];
-  leadership?: import('../types/matrix').PlantLeadership;
+  leadership?: PlantLeadership;
+  terminology?: TerminologyConfig;
 }
 
 export const PrintReportView: React.FC<PrintReportViewProps> = ({
@@ -16,7 +17,8 @@ export const PrintReportView: React.FC<PrintReportViewProps> = ({
   model,
   stages,
   workers,
-  leadership
+  leadership,
+  terminology
 }) => {
   const stageMetrics = stages.map(s => calculateStageMetric(s, workers));
   const coveredCount = stageMetrics.filter(m => m.isCovered).length;

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Worker, Stage, SkillLevel } from '../types/matrix';
+import { Worker, Stage, SkillLevel, TerminologyConfig } from '../types/matrix';
 import { SKILL_DEFINITIONS } from '../utils/constants';
 import { calculateStageMetric, calculateWorkerFlexibility } from '../utils/matrixCalculations';
 import { 
@@ -23,6 +23,7 @@ interface SkillsMatrixGridProps {
   onSelectWorkerDetails: (worker: Worker) => void;
   onEditWorker: (worker: Worker) => void;
   onDeleteWorker: (worker: Worker) => void;
+  terminology?: TerminologyConfig;
 }
 
 export const SkillsMatrixGrid: React.FC<SkillsMatrixGridProps> = ({
@@ -31,7 +32,8 @@ export const SkillsMatrixGrid: React.FC<SkillsMatrixGridProps> = ({
   onUpdateWorkerSkill,
   onSelectWorkerDetails,
   onEditWorker,
-  onDeleteWorker
+  onDeleteWorker,
+  terminology
 }) => {
   const [pageSize, setPageSize] = useState<number>(50);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -440,7 +442,7 @@ export const SkillsMatrixGrid: React.FC<SkillsMatrixGridProps> = ({
 
                 {/* Sticky Corner 2 */}
                 <td className="sticky right-[56px] z-40 bg-slate-900 px-3 py-2.5 text-slate-100 border-l border-slate-800 w-40 sm:w-48 min-w-[160px] sm:min-w-[192px] max-w-[160px] sm:max-w-[192px]">
-                  جاهزية الخط (المتوفر / المستهدف)
+                  جاهزية {terminology?.lineLabel || 'الخط'} (المتوفر / المستهدف)
                 </td>
 
                 <td className="px-2 py-2.5 text-center font-mono text-slate-300 border-l border-slate-800">

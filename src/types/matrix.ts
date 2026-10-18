@@ -138,3 +138,51 @@ export interface PlantLeadership {
   engineerName: string; // اسم المهندس المسؤول (مثل: م. مينا خيرت)
   managerName: string; // اسم مدير الإدارة / العمليات
 }
+
+export interface FullSystemBackup {
+  version: string;
+  exportDate: string;
+  totalWorkers: number;
+  totalLines: number;
+  terminology: TerminologyConfig;
+  settings: {
+    targetWorkersPerStage: number;
+    targetStagesPerWorker: number;
+    minQualifiedLevel: number;
+  };
+  leadership: PlantLeadership;
+  lines: ProductionLine[];
+  workers: Worker[];
+  logs?: AuditLogEntry[];
+}
+
+export type IndustrialProblemCategory =
+  | 'bottleneck'          // اختناق حاد في مرحلة إنتاجية
+  | 'absenteeism'         // غياب مفاجئ أو نقص عمال في وردية
+  | 'quality_defect'      // ارتفاع نسبة المعيب والفاقد
+  | 'worker_rigidity'     // ضعف مرونة وتدوير العمال
+  | 'model_changeover'    // تأخير تغيير الموديل والطلبيات المستعجلة
+  | 'machine_breakdown'   // عطل فني في ماكينة / توقف مفاجئ
+  | 'custom';             // مشكلة مخصصة من المستخدم
+
+export interface ProblemSolutionResult {
+  problemTitle: string;
+  category: IndustrialProblemCategory;
+  severity: 'critical' | 'high' | 'medium';
+  summary: string;
+  rootCauseAnalysis: string[];
+  immediateSolutions: {
+    timeframe: string;
+    action: string;
+    responsible: string;
+    assignedWorkers?: { name: string; code: string; shift: string; level: number; role: string }[];
+  }[];
+  mediumTermPlan: {
+    day: string;
+    target: string;
+    method: string;
+  }[];
+  preventiveMeasures: string[];
+  aiExecutiveNote: string;
+}
+

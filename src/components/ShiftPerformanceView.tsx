@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ProductionLine, Model, Stage, Worker, ShiftPerformanceMetric } from '../types/matrix';
+import { ProductionLine, Model, Stage, Worker, ShiftPerformanceMetric, TerminologyConfig } from '../types/matrix';
 import { calculateAllShiftsPerformance } from '../utils/performanceCalculator';
 import { 
   TrendingUp, 
@@ -20,6 +20,7 @@ interface ShiftPerformanceViewProps {
   stages: Stage[];
   lineWorkers: Worker[];
   onOpenWorkerModal: (worker: Worker) => void;
+  terminology?: TerminologyConfig;
 }
 
 export const ShiftPerformanceView: React.FC<ShiftPerformanceViewProps> = ({
@@ -27,7 +28,8 @@ export const ShiftPerformanceView: React.FC<ShiftPerformanceViewProps> = ({
   model,
   stages,
   lineWorkers,
-  onOpenWorkerModal
+  onOpenWorkerModal,
+  terminology
 }) => {
   const [simulationUpgradedCount, setSimulationUpgradedCount] = useState<number>(2);
 
