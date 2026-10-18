@@ -26,12 +26,15 @@ import {
   RotateCcw,
   Sliders,
   Filter,
-  MessageSquare
+  MessageSquare,
+  Key
 } from 'lucide-react';
 import { Worker, Stage, ProductionLine, Model, PlantLeadership, TerminologyConfig, IndustrialProblemCategory, ProblemSolutionResult } from '../types/matrix';
 import { calculateStageMetric, calculateWorkerFlexibility } from '../utils/matrixCalculations';
 import { generateIndustrialAIAdvice, AIAdviceResponse, solveIndustrialProblem } from '../utils/industrialAISolver';
 import { formatUnitName, formatSubUnitName } from '../utils/constants';
+import { sendAdvisorQueryUnified, getClientGeminiApiKey, isStaticDeployment } from '../utils/geminiService';
+import { GeminiApiKeyModal } from './GeminiApiKeyModal';
 import { GeminiAIChatView } from './GeminiAIChatView';
 
 interface AIAdvisorViewProps {
@@ -82,8 +85,9 @@ export const AIAdvisorView: React.FC<AIAdvisorViewProps> = ({
   const [userQuery, setUserQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedAdvice, setCopiedAdvice] = useState(false);
-  const [advice, setAdvice] = useState<AIAdviceResponse | null>(null);
   const [adviceAiSource, setAdviceAiSource] = useState<'gemini' | 'industrial_engine'>('industrial_engine');
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [hasClientKey, setHasClientKey] = useState<boolean>(() => Boolean(getClientGeminiApiKey()));
 
   // Calculate live stage metrics
   const stageMetrics = stages.map(s => calculateStageMetric(s, lineWorkers));
