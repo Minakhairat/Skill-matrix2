@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, UserPlus, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, UserPlus, Check, UserCheck } from 'lucide-react';
 import { Worker, ProductionLine, Stage, SkillLevel } from '../types/matrix';
 import { SKILL_DEFINITIONS } from '../utils/constants';
 
@@ -7,6 +7,7 @@ interface WorkerEditModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSaveWorker: (worker: Worker) => void;
+  workerToEdit?: Worker | null;
   lines: ProductionLine[];
   currentLineId: string;
   stages: Stage[];
@@ -16,18 +17,38 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
   isOpen,
   onClose,
   onSaveWorker,
+  workerToEdit,
   lines,
   currentLineId,
   stages
 }) => {
-  const [empCode, setEmpCode] = useState(`EMP-${Math.floor(400 + Math.random() * 500)}`);
+  const [empCode, setEmpCode] = useState('');
   const [name, setName] = useState('');
   const [lineId, setLineId] = useState(currentLineId);
   const [shift, setShift] = useState<'A' | 'B' | 'C'>('A');
   const [skills, setSkills] = useState<Record<string, SkillLevel>>({});
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (workerToEdit) {
+      setEmpCode(workerToEdit.empCode);
+      setName(workerToEdit.name);
+      setLineId(workerToEdit.lineId);
+      setShift(workerToEdit.shift);
+      setSkills(workerToEdit.skills || {});
+    } else {
+      setEmpCode(`EMP-${Math.floor(400 + Math.random() * 500)}`);
+      setName('');
+      setLineId(currentLineId);
+      setShift('A');
+      setSkills({});
+    }
+    setError(null);
+  }, [workerToEdit, currentLineId, isOpen]);
+
   if (!isOpen) return null;
+
+  const isEditMode = Boolean(workerToEdit);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,19 +61,19 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
       return;
     }
 
-    const newWorker: Worker = {
-      id: `w-${Date.now()}`,
+    const savedWorker: Worker = {
+      id: workerToEdit ? workerToEdit.id : `w-${Date.now()}`,
       empCode: empCode.trim(),
       name: name.trim(),
       lineId,
       shift,
-      targetStagesCount: 3,
-      minProficiencyTarget: 3,
+      targetStagesCount: workerToEdit ? workerToEdit.targetStagesCount : 3,
+      minProficiencyTarget: workerToEdit ? workerToEdit.minProficiencyTarget : 3,
       skills,
-      hireDate: new Date().toISOString().split('T')[0]
+      hireDate: workerToEdit ? workerToEdit.hireDate : new Date().toISOString().split('T')[0]
     };
 
-    onSaveWorker(newWorker);
+    onSaveWorker(savedWorker);
     onClose();
   };
 
@@ -67,12 +88,16 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
         {/* Header */}
         <div className="p-3.5 sm:p-5 bg-slate-900 text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="p-1.5 bg-slate-800 rounded-lg text-emerald-400">
-              <UserPlus className="w-5 h-5" />
+            <div className={`p-1.5 rounded-lg ${isEditMode ? 'bg-sky-800 text-sky-200' : 'bg-slate-800 text-emerald-400'}`}>
+              {isEditMode ? <UserCheck className="w-5 h-5" /> : <UserPlus className="w-5 h-5" />}
             </div>
             <div>
-              <h3 className="text-sm sm:text-base font-bold text-white">إضافة عامل جديد إلى خط الإنتاج</h3>
-              <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5">تسجيل بيانات العامل وتقييمه المبدئي على المراحل</p>
+              <h3 className="text-sm sm:text-base font-bold text-white">
+                {isEditMode ? `تعديل بيانات العامل (${workerToEdit?.name})` : 'إضافة عامل جديد إلى خط الإنتاج'}
+              </h3>
+              <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5">
+                {isEditMode ? 'تحديث الكود والاسم والوردية وتقييمات المهارات' : 'تسجيل بيانات العامل وتقييمه المبدئي على المراحل'}
+              </p>
             </div>
           </div>
 
@@ -85,7 +110,7 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
           
           {error && (
             <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs font-semibold">
@@ -146,18 +171,21 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
             </div>
           </div>
 
-          {/* Initial skills assignment */}
+          {/* Skills assignment */}
           <div className="pt-2">
             <label className="text-xs font-bold text-slate-800 block mb-2">
-              التقييم الأولي لمراحل العمل (اختياري - افتراضياً 0):
+              تقييم مهارات العامل على مراحل هذا الموديل (0 إلى 4):
             </label>
-            <div className="space-y-2 max-h-48 overflow-y-auto p-1">
+            <div className="space-y-2 max-h-52 overflow-y-auto p-1 matrix-scroll">
               {stages.map((stg) => {
                 const currentLevel = (skills[stg.id] ?? 0) as SkillLevel;
                 return (
-                  <div key={stg.id} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-200 rounded text-xs">
-                    <span className="font-medium text-slate-800">{stg.name}</span>
-                    <div className="flex items-center gap-1">
+                  <div key={stg.id} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                    <div className="truncate max-w-[200px]">
+                      <span className="font-semibold text-slate-800 block">{stg.name}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">كود: {stg.code}</span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
                       {([0, 1, 2, 3, 4] as SkillLevel[]).map((lvl) => {
                         const def = SKILL_DEFINITIONS[lvl];
                         const isSelected = currentLevel === lvl;
@@ -166,10 +194,10 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
                             key={lvl}
                             type="button"
                             onClick={() => handleSkillChange(stg.id, lvl)}
-                            className={`w-6 h-6 rounded font-mono text-xs font-bold transition-all ${
+                            className={`w-7 h-7 rounded font-mono text-xs font-bold transition-all ${
                               isSelected
-                                ? `${def.bgClass} ${def.borderClass} ${def.textClass} ring-1 ring-slate-900 font-bold`
-                                : 'bg-white border border-slate-200 text-slate-400'
+                                ? `${def.bgClass} ${def.borderClass} ${def.textClass} ring-2 ring-slate-900 font-bold scale-105 shadow-xs`
+                                : 'bg-white border border-slate-200 text-slate-400 hover:text-slate-700'
                             }`}
                           >
                             {lvl}
@@ -183,7 +211,7 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
             </div>
           </div>
 
-          <div className="p-4 bg-slate-50 -mx-6 -mb-6 border-t border-slate-200 flex justify-end gap-2">
+          <div className="p-4 bg-slate-50 -mx-4 sm:-mx-6 -mb-4 sm:-mb-6 border-t border-slate-200 flex justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
@@ -196,7 +224,7 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
               className="px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
             >
               <Check className="w-3.5 h-3.5" />
-              حفظ العامل
+              {isEditMode ? 'حفظ التعديلات' : 'إضافة العامل'}
             </button>
           </div>
 

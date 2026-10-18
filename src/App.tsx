@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ProductionLine, Model, Worker, SkillLevel, Stage } from './types/matrix';
+import { ProductionLine, Model, Worker, SkillLevel, Stage, AuditLogEntry, ActionType } from './types/matrix';
 import { generateInitialLines, generate400Workers } from './utils/mockGenerator';
 import { 
   DEFAULT_WORKSTATION_TARGET, 
@@ -7,17 +7,23 @@ import {
   DEFAULT_MIN_QUALIFIED_LEVEL,
   STORAGE_KEY_WORKERS,
   STORAGE_KEY_LINES,
-  STORAGE_KEY_SETTINGS
+  STORAGE_KEY_SETTINGS,
+  STORAGE_KEY_HISTORY
 } from './utils/constants';
+import { loadInitialLogs, getActionTypeMeta } from './utils/historyLogger';
 import { Header } from './components/Header';
 import { LineModelBar } from './components/LineModelBar';
 import { SkillsMatrixGrid } from './components/SkillsMatrixGrid';
 import { GapAnalysisDashboard } from './components/GapAnalysisDashboard';
+import { ShiftPerformanceView } from './components/ShiftPerformanceView';
 import { WorkerProfilesView } from './components/WorkerProfilesView';
 import { PrintReportView } from './components/PrintReportView';
 import { TargetSettingsModal } from './components/TargetSettingsModal';
 import { ImportExportModal } from './components/ImportExportModal';
 import { WorkerEditModal } from './components/WorkerEditModal';
+import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
+import { HistoryModal } from './components/HistoryModal';
+import { Footer } from './components/Footer';
 import { calculateWorkerFlexibility } from './utils/matrixCalculations';
 
 export default function App() {
@@ -77,8 +83,13 @@ export default function App() {
     return DEFAULT_MIN_QUALIFIED_LEVEL;
   });
 
+  // Audit Logs State
+  const [logs, setLogs] = useState<AuditLogEntry[]>(() => {
+    return loadInitialLogs();
+  });
+
   // Navigation & View State
-  const [activeTab, setActiveTab] = useState<'matrix' | 'balancing' | 'workers' | 'print'>('matrix');
+  const [activeTab, setActiveTab] = useState<'matrix' | 'balancing' | 'performance' | 'workers' | 'print'>('matrix');
   const [selectedLineId, setSelectedLineId] = useState<string>(lines[0]?.id || 'LINE-A');
   const [selectedModelId, setSelectedModelId] = useState<string>(lines[0]?.models[0]?.id || 'MOD-A1');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -87,7 +98,11 @@ export default function App() {
   // Modals State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isImportExportOpen, setIsImportExportOpen] = useState(false);
-  const [isAddWorkerOpen, setIsAddWorkerOpen] = useState(false);
+  const [isWorkerEditOpen, setIsWorkerEditOpen] = useState(false);
+  const [workerToEdit, setWorkerToEdit] = useState<Worker | null>(null);
+  const [workerToDelete, setWorkerToDelete] = useState<Worker | null>(null);
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [selectedWorkerForModal, setSelectedWorkerForModal] = useState<Worker | null>(null);
 
   // Persistence to LocalStorage
@@ -115,6 +130,31 @@ export default function App() {
       );
     } catch (e) {}
   }, [targetWorkersPerStage, targetStagesPerWorker, minQualifiedLevel]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(logs));
+    } catch (e) {}
+  }, [logs]);
+
+  // Helper to add audit logs
+  const logAction = useCallback((actionType: ActionType, title: string, details: string) => {
+    const meta = getActionTypeMeta(actionType);
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ' + now.toLocaleDateString('ar-EG');
+    
+    const newEntry: AuditLogEntry = {
+      id: `log-${Date.now()}-${Math.random()}`,
+      timestamp: timeStr,
+      actionType,
+      title,
+      details,
+      badgeLabel: meta.label,
+      badgeClass: meta.badgeClass
+    };
+
+    setLogs(prev => [newEntry, ...prev.slice(0, 99)]); // Keep last 100 entries
+  }, []);
 
   // Active Line & Model Objects
   const selectedLine = useMemo(() => {
@@ -160,8 +200,12 @@ export default function App() {
     }));
   }, [selectedModel, targetWorkersPerStage, minQualifiedLevel]);
 
-  // Handlers
+  // Handlers with audit logging
   const handleUpdateWorkerSkill = useCallback((workerId: string, stageId: string, newLevel: SkillLevel) => {
+    const targetWorker = workers.find(w => w.id === workerId);
+    const targetStage = currentStages.find(s => s.id === stageId);
+    const oldLevel = targetWorker ? (targetWorker.skills[stageId] ?? 0) : 0;
+
     setWorkers(prevWorkers => {
       return prevWorkers.map(w => {
         if (w.id === workerId) {
@@ -182,24 +226,90 @@ export default function App() {
       }
       return prev;
     });
-  }, []);
+
+    if (targetWorker && targetStage) {
+      logAction(
+        'skill_update',
+        `تعديل مهارة العامل ${targetWorker.name}`,
+        `تم تعديل التقييم في مرحلة "${targetStage.name}" من المستوى ${oldLevel} إلى المستوى ${newLevel}.`
+      );
+    }
+  }, [workers, currentStages, logAction]);
 
   const handleTransferWorkerLine = useCallback((workerId: string, targetLineId: string) => {
+    const targetWorker = workers.find(w => w.id === workerId);
+    const targetLine = lines.find(l => l.id === targetLineId);
+
     setWorkers(prev => prev.map(w => {
       if (w.id === workerId) {
         return { ...w, lineId: targetLineId };
       }
       return w;
     }));
-  }, []);
 
-  const handleSaveNewWorker = (newWorker: Worker) => {
-    setWorkers(prev => [newWorker, ...prev]);
+    if (targetWorker && targetLine) {
+      logAction(
+        'rebalance',
+        `نقل العامل ${targetWorker.name} لسد العجز`,
+        `تم تحويل العامل ${targetWorker.name} (${targetWorker.empCode}) إلى خط "${targetLine.name}".`
+      );
+    }
+  }, [workers, lines, logAction]);
+
+  const handleSaveWorker = (savedWorker: Worker) => {
+    const exists = workers.some(w => w.id === savedWorker.id);
+    if (exists) {
+      // Edit existing
+      setWorkers(prev => prev.map(w => w.id === savedWorker.id ? savedWorker : w));
+      logAction(
+        'worker_edited',
+        `تعديل بيانات العامل ${savedWorker.name}`,
+        `تم تحديث بيانات العامل ${savedWorker.name} (الكود: ${savedWorker.empCode}) والوردية ${savedWorker.shift}.`
+      );
+    } else {
+      // Add new
+      setWorkers(prev => [savedWorker, ...prev]);
+      logAction(
+        'worker_added',
+        `إضافة العامل الجديد ${savedWorker.name}`,
+        `تم تسجيل العامل (الكود: ${savedWorker.empCode}) على خط ${selectedLine.name} في الوردية ${savedWorker.shift}.`
+      );
+    }
+    setWorkerToEdit(null);
+  };
+
+  const handleDeleteWorker = (workerId: string) => {
+    const targetWorker = workers.find(w => w.id === workerId);
+    setWorkers(prev => prev.filter(w => w.id !== workerId));
+    if (targetWorker) {
+      logAction(
+        'worker_deleted',
+        `حذف العامل ${targetWorker.name}`,
+        `تم حذف العامل ${targetWorker.name} (${targetWorker.empCode}) وكافة تقييماته نهائياً من النظام.`
+      );
+    }
+    setWorkerToDelete(null);
+    if (selectedWorkerForModal?.id === workerId) {
+      setSelectedWorkerForModal(null);
+    }
+  };
+
+  const handleClearAllData = () => {
+    setWorkers([]);
+    logAction(
+      'all_cleared',
+      'مسح شامل لكافة بيانات العمال',
+      'تم مسح كافة سجلات العمال ومصفوفة المهارات بالكامل من المتصفح.'
+    );
+  };
+
+  const handleClearHistory = () => {
+    setLogs([]);
+    localStorage.removeItem(STORAGE_KEY_HISTORY);
   };
 
   const handleImportSuccess = (newWorkers: Worker[]) => {
     setWorkers(prev => {
-      // Merge or update existing by empCode
       const updated = [...prev];
       newWorkers.forEach(nw => {
         const idx = updated.findIndex(u => u.empCode === nw.empCode);
@@ -211,6 +321,12 @@ export default function App() {
       });
       return updated;
     });
+
+    logAction(
+      'data_imported',
+      `استيراد ${newWorkers.length} عامل من ملف Excel`,
+      `تم استيراد وتحديث تقييمات ${newWorkers.length} عامل بنجاح في خط الإنتاج.`
+    );
   };
 
   const handleReset400Workers = () => {
@@ -220,10 +336,15 @@ export default function App() {
     setWorkers(freshWorkers);
     setSelectedLineId(freshLines[0].id);
     setSelectedModelId(freshLines[0].models[0].id);
+
+    logAction(
+      'data_imported',
+      'استعادة الـ 400 عامل التجريبيين',
+      'تمت إعادة توليد 400 عامل واقعي موزعين على كافة خطوط الإنتاج والورديات.'
+    );
   };
 
   const handleApplyToAllStages = () => {
-    // When user changes global target (e.g. 5 workers, 3 stages), update state
     setLines(prevLines => {
       return prevLines.map(line => ({
         ...line,
@@ -237,6 +358,12 @@ export default function App() {
         }))
       }));
     });
+
+    logAction(
+      'target_changed',
+      'تحديث معايير وأهداف الخطوط',
+      `تم تطبيق هدف ${targetWorkersPerStage} عمال لكل مرحلة، والمستوى ${minQualifiedLevel} كحد أدنى، ومرونة ${targetStagesPerWorker} مراحل للعامل.`
+    );
   };
 
   // Qualified workers meeting flexibility target on this line
@@ -256,8 +383,13 @@ export default function App() {
         setActiveTab={setActiveTab}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenImportExport={() => setIsImportExportOpen(true)}
-        onOpenAddWorker={() => setIsAddWorkerOpen(true)}
+        onOpenAddWorker={() => {
+          setWorkerToEdit(null);
+          setIsWorkerEditOpen(true);
+        }}
         onResetSampleData={handleReset400Workers}
+        onOpenHistory={() => setIsHistoryOpen(true)}
+        onOpenClearAllModal={() => setIsClearAllModalOpen(true)}
         totalWorkersCount={workers.length}
       />
 
@@ -287,6 +419,11 @@ export default function App() {
               stages={currentStages}
               onUpdateWorkerSkill={handleUpdateWorkerSkill}
               onSelectWorkerDetails={(worker) => setSelectedWorkerForModal(worker)}
+              onEditWorker={(worker) => {
+                setWorkerToEdit(worker);
+                setIsWorkerEditOpen(true);
+              }}
+              onDeleteWorker={(worker) => setWorkerToDelete(worker)}
             />
           </div>
         )}
@@ -303,6 +440,16 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'performance' && (
+          <ShiftPerformanceView
+            line={selectedLine}
+            model={selectedModel}
+            stages={currentStages}
+            lineWorkers={lineWorkers}
+            onOpenWorkerModal={(worker) => setSelectedWorkerForModal(worker)}
+          />
+        )}
+
         {activeTab === 'workers' && (
           <WorkerProfilesView
             workers={filteredLineWorkers}
@@ -311,6 +458,11 @@ export default function App() {
             selectedWorkerForModal={selectedWorkerForModal}
             onOpenWorkerModal={(worker) => setSelectedWorkerForModal(worker)}
             onCloseWorkerModal={() => setSelectedWorkerForModal(null)}
+            onEditWorker={(worker) => {
+              setWorkerToEdit(worker);
+              setIsWorkerEditOpen(true);
+            }}
+            onDeleteWorker={(worker) => setWorkerToDelete(worker)}
           />
         )}
 
@@ -350,13 +502,39 @@ export default function App() {
       />
 
       <WorkerEditModal
-        isOpen={isAddWorkerOpen}
-        onClose={() => setIsAddWorkerOpen(false)}
-        onSaveWorker={handleSaveNewWorker}
+        isOpen={isWorkerEditOpen}
+        onClose={() => {
+          setIsWorkerEditOpen(false);
+          setWorkerToEdit(null);
+        }}
+        onSaveWorker={handleSaveWorker}
+        workerToEdit={workerToEdit}
         lines={lines}
         currentLineId={selectedLine.id}
         stages={currentStages}
       />
+
+      <ConfirmDeleteModal
+        isOpen={Boolean(workerToDelete) || isClearAllModalOpen}
+        onClose={() => {
+          setWorkerToDelete(null);
+          setIsClearAllModalOpen(false);
+        }}
+        workerToDelete={workerToDelete}
+        onConfirmDeleteWorker={handleDeleteWorker}
+        isClearAllMode={isClearAllModalOpen}
+        onConfirmClearAll={handleClearAllData}
+      />
+
+      <HistoryModal
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        logs={logs}
+        onClearHistory={handleClearHistory}
+      />
+
+      {/* Dedicated Engineering Footer */}
+      <Footer />
 
     </div>
   );

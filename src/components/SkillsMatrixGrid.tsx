@@ -2,20 +2,33 @@ import React, { useState, useMemo } from 'react';
 import { Worker, Stage, SkillLevel } from '../types/matrix';
 import { SKILL_DEFINITIONS } from '../utils/constants';
 import { calculateStageMetric, calculateWorkerFlexibility } from '../utils/matrixCalculations';
-import { Check, AlertCircle, ChevronLeft, ChevronRight, Info, LayoutGrid, TableProperties } from 'lucide-react';
+import { 
+  Check, 
+  AlertCircle, 
+  ChevronLeft, 
+  ChevronRight, 
+  LayoutGrid, 
+  TableProperties,
+  Edit2,
+  Trash2
+} from 'lucide-react';
 
 interface SkillsMatrixGridProps {
   workers: Worker[];
   stages: Stage[];
   onUpdateWorkerSkill: (workerId: string, stageId: string, newLevel: SkillLevel) => void;
   onSelectWorkerDetails: (worker: Worker) => void;
+  onEditWorker: (worker: Worker) => void;
+  onDeleteWorker: (worker: Worker) => void;
 }
 
 export const SkillsMatrixGrid: React.FC<SkillsMatrixGridProps> = ({
   workers,
   stages,
   onUpdateWorkerSkill,
-  onSelectWorkerDetails
+  onSelectWorkerDetails,
+  onEditWorker,
+  onDeleteWorker
 }) => {
   const [pageSize, setPageSize] = useState<number>(50);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -123,30 +136,45 @@ export const SkillsMatrixGrid: React.FC<SkillsMatrixGridProps> = ({
             return (
               <div 
                 key={worker.id}
-                className="bg-slate-50/60 rounded-xl border border-slate-200 p-3.5 shadow-xs"
+                className="bg-slate-50/70 rounded-xl border border-slate-200 p-3.5 shadow-xs"
               >
-                {/* Worker Header */}
+                {/* Worker Header with Edit and Delete actions */}
                 <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded">
+                  <div className="flex items-center gap-2 truncate max-w-[190px]">
+                    <span className="font-mono text-xs font-bold text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded shrink-0">
                       {worker.empCode}
                     </span>
                     <button
                       onClick={() => onSelectWorkerDetails(worker)}
-                      className="text-xs font-bold text-slate-900 hover:text-emerald-700 text-right truncate max-w-[150px]"
+                      className="text-xs font-bold text-slate-900 hover:text-emerald-700 text-right truncate"
                     >
                       {worker.name}
                     </button>
                   </div>
 
-                  {/* Flexibility Target Badge */}
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-slate-500 font-medium">الوردية {worker.shift}</span>
-                    <span className={`text-[11px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                  {/* Actions & Flexibility Target Badge */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
                       flex.isTargetMet ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                     }`}>
-                      {flex.qualifiedStagesCount} / {worker.targetStagesCount}
+                      {flex.qualifiedStagesCount}/{worker.targetStagesCount}
                     </span>
+
+                    <button
+                      onClick={() => onEditWorker(worker)}
+                      className="p-1 text-slate-500 hover:text-sky-700 bg-white rounded border border-slate-200"
+                      title="تعديل بيانات العامل"
+                    >
+                      <Edit2 className="w-3 h-3" />
+                    </button>
+
+                    <button
+                      onClick={() => onDeleteWorker(worker)}
+                      className="p-1 text-slate-400 hover:text-rose-600 bg-white rounded border border-slate-200"
+                      title="حذف العامل"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
                   </div>
                 </div>
 
@@ -210,9 +238,9 @@ export const SkillsMatrixGrid: React.FC<SkillsMatrixGridProps> = ({
                 الكود
               </th>
 
-              {/* Sticky Col 2: Worker Name */}
-              <th className="sticky right-16 sm:right-20 z-30 bg-slate-900 px-3 sm:px-4 py-3 font-semibold text-white w-32 sm:w-44 border-b border-l border-slate-800">
-                اسم العامل
+              {/* Sticky Col 2: Worker Name & Actions */}
+              <th className="sticky right-16 sm:right-20 z-30 bg-slate-900 px-3 sm:px-4 py-3 font-semibold text-white w-44 sm:w-56 border-b border-l border-slate-800">
+                اسم العامل والإجراءات
               </th>
 
               {/* Sticky Col 3: Shift */}
@@ -263,22 +291,41 @@ export const SkillsMatrixGrid: React.FC<SkillsMatrixGridProps> = ({
                 return (
                   <tr 
                     key={worker.id}
-                    className={`transition-colors hover:bg-slate-50/80 ${isEven ? 'bg-white' : 'bg-slate-50/40'}`}
+                    className={`transition-colors hover:bg-slate-50/80 group ${isEven ? 'bg-white' : 'bg-slate-50/40'}`}
                   >
                     {/* Sticky Col 1: Worker ID */}
                     <td className="sticky right-0 z-10 px-2 sm:px-3 py-2 text-center font-mono text-[10px] sm:text-[11px] font-semibold text-slate-600 border-l border-slate-200 bg-inherit whitespace-nowrap">
                       {worker.empCode}
                     </td>
 
-                    {/* Sticky Col 2: Worker Name */}
-                    <td className="sticky right-16 sm:right-20 z-10 px-3 sm:px-4 py-2 font-medium text-slate-900 border-l border-slate-200 bg-inherit whitespace-nowrap">
-                      <button
-                        onClick={() => onSelectWorkerDetails(worker)}
-                        className="text-right hover:text-emerald-700 hover:underline transition-colors block font-semibold truncate max-w-[120px] sm:max-w-[160px]"
-                        title="انقر لعرض ملف العامل"
-                      >
-                        {worker.name}
-                      </button>
+                    {/* Sticky Col 2: Worker Name & Direct Edit/Delete Buttons */}
+                    <td className="sticky right-16 sm:right-20 z-10 px-2 sm:px-3 py-2 font-medium text-slate-900 border-l border-slate-200 bg-inherit whitespace-nowrap">
+                      <div className="flex items-center justify-between gap-1">
+                        <button
+                          onClick={() => onSelectWorkerDetails(worker)}
+                          className="text-right hover:text-emerald-700 hover:underline transition-colors block font-semibold truncate max-w-[120px] sm:max-w-[140px]"
+                          title="انقر لعرض تفاصيل العامل"
+                        >
+                          {worker.name}
+                        </button>
+
+                        <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => onEditWorker(worker)}
+                            className="p-1 text-slate-400 hover:text-sky-700 hover:bg-slate-100 rounded"
+                            title="تعديل العامل"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => onDeleteWorker(worker)}
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded"
+                            title="حذف العامل"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
                     </td>
 
                     {/* Col 3: Shift */}

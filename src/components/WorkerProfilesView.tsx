@@ -14,7 +14,9 @@ import {
   ChevronLeft,
   ChevronRight,
   TrendingUp,
-  X
+  X,
+  Edit2,
+  Trash2
 } from 'lucide-react';
 
 interface WorkerProfilesViewProps {
@@ -24,6 +26,8 @@ interface WorkerProfilesViewProps {
   selectedWorkerForModal: Worker | null;
   onCloseWorkerModal: () => void;
   onOpenWorkerModal: (worker: Worker) => void;
+  onEditWorker: (worker: Worker) => void;
+  onDeleteWorker: (worker: Worker) => void;
 }
 
 export const WorkerProfilesView: React.FC<WorkerProfilesViewProps> = ({
@@ -32,7 +36,9 @@ export const WorkerProfilesView: React.FC<WorkerProfilesViewProps> = ({
   onUpdateWorkerSkill,
   selectedWorkerForModal,
   onCloseWorkerModal,
-  onOpenWorkerModal
+  onOpenWorkerModal,
+  onEditWorker,
+  onDeleteWorker
 }) => {
   const [filterStatus, setFilterStatus] = useState<'all' | 'met' | 'needs_training'>('all');
   const [search, setSearch] = useState<string>('');
@@ -161,14 +167,36 @@ export const WorkerProfilesView: React.FC<WorkerProfilesViewProps> = ({
                 className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs hover:border-slate-400 hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between"
               >
                 <div>
-                  {/* Worker Code & Shift */}
+                  {/* Worker Code, Shift & Quick Actions */}
                   <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
                     <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
                       {worker.empCode}
                     </span>
-                    <span className="text-[11px] font-medium">
-                      الوردية {worker.shift}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] font-medium ml-1">
+                        الوردية {worker.shift}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditWorker(worker);
+                        }}
+                        className="p-1 text-slate-400 hover:text-sky-700 hover:bg-slate-100 rounded"
+                        title="تعديل بيانات العامل"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteWorker(worker);
+                        }}
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded"
+                        title="حذف العامل"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Worker Name */}

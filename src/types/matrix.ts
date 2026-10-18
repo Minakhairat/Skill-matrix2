@@ -88,3 +88,37 @@ export interface RebalanceSuggestion {
     recommendedAction: 'transfer_line' | 'shift_workstation' | 'accelerate_training';
   }[];
 }
+
+export type ActionType = 
+  | 'skill_update'
+  | 'worker_added'
+  | 'worker_edited'
+  | 'worker_deleted'
+  | 'all_cleared'
+  | 'target_changed'
+  | 'data_imported'
+  | 'rebalance';
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  actionType: ActionType;
+  title: string;
+  details: string;
+  badgeLabel: string;
+  badgeClass: string;
+}
+
+export interface ShiftPerformanceMetric {
+  shift: 'A' | 'B' | 'C';
+  shiftName: string;
+  workerCount: number;
+  totalSkillPoints: number;
+  avgSkillPointsPerWorker: number; // Max 4.0
+  multiSkilledCount: number; // Meeting 3-stages target
+  multiSkilledRate: number; // %
+  improvementUpliftRate: number; // % estimated operational uplift
+  criticalStagesCoveredCount: number;
+  bottlenecksCount: number;
+}
+

@@ -60,3 +60,5 @@ export const DEFAULT_WORKER_FLEXIBILITY_TARGET = 3; // Each worker skilled on 3 
 export const STORAGE_KEY_WORKERS = 'matrixpro_workers_v1';
 export const STORAGE_KEY_LINES = 'matrixpro_lines_v1';
 export const STORAGE_KEY_SETTINGS = 'matrixpro_settings_v1';
+export const STORAGE_KEY_HISTORY = 'matrixpro_history_v1';
+
