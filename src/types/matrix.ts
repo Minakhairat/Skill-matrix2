@@ -122,3 +122,16 @@ export interface ShiftPerformanceMetric {
   bottlenecksCount: number;
 }
 
+export type TerminologyPreset = 'lines_models' | 'machines_molds' | 'departments_products' | 'custom';
+
+export interface TerminologyConfig {
+  preset: TerminologyPreset;
+  lineLabel: string; // e.g. "خط إنتاج" أو "ماكينة"
+  lineLabelPlural: string; // e.g. "خطوط الإنتاج" أو "الماكينات"
+  modelLabel: string; // e.g. "موديل" أو "اسطمبة"
+  modelLabelPlural: string; // e.g. "الموديلات" أو "الاسطمبات"
+  stageLabel: string; // e.g. "مرحلة" أو "عملية"
+  stageLabelPlural: string; // e.g. "المراحل" أو "العمليات"
+}
+
+

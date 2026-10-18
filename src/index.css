@@ -1,6 +1,13 @@
 @import "tailwindcss";
 
 @layer base {
+  html, body {
+    overflow-x: hidden;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
   body {
     font-family: 'Cairo', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     color: #0f172a;
@@ -14,10 +21,15 @@
   }
 }
 
-/* Custom horizontal and vertical scrollbars for smooth high-density matrix navigation */
+/* Custom smooth horizontal and vertical scrollbars for matrix and tables */
+.matrix-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
 .matrix-scroll::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 .matrix-scroll::-webkit-scrollbar-track {
   background: #f1f5f9;

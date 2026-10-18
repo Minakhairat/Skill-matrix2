@@ -28,7 +28,7 @@ export const PrintReportView: React.FC<PrintReportViewProps> = ({
     <div className="space-y-6">
       
       {/* Print Trigger Action Bar (Hidden when printed) */}
-      <div className="no-print bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+      <div className="no-print bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-bold text-slate-900">تقرير جاهزية خط الإنتاج الرسمي (Shift & Audit Report)</h2>
           <p className="text-xs text-slate-500 mt-0.5">تقرير مخصص وجاهز للطباعة المباشرة بصيغة A4 لتقديمه لمدير المصنع ومشرفي الورديات</p>
@@ -36,27 +36,27 @@ export const PrintReportView: React.FC<PrintReportViewProps> = ({
 
         <button
           onClick={() => window.print()}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+          className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors shrink-0"
         >
           <Printer className="w-4 h-4" />
-          طباعة التقرير (Print / PDF)
+          <span>طباعة التقرير (Print / PDF)</span>
         </button>
       </div>
 
       {/* Printable Sheet */}
-      <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-xs max-w-5xl mx-auto print:border-none print:shadow-none print:p-0">
+      <div className="bg-white p-4 sm:p-8 rounded-xl border border-slate-200 shadow-xs max-w-5xl mx-auto print:border-none print:shadow-none print:p-0">
         
         {/* Document Header */}
-        <div className="border-b-2 border-slate-900 pb-4 flex items-start justify-between">
+        <div className="border-b-2 border-slate-900 pb-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
           <div>
-            <div className="text-2xl font-black text-slate-900 tracking-tight">MatrixPro Industrial</div>
-            <div className="text-sm font-bold text-slate-700 mt-1">تقرير كفاءة وموازنة خطوط الإنتاج والعمالة</div>
-            <div className="text-xs text-slate-500 mt-1">
+            <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">MatrixPro Industrial</div>
+            <div className="text-xs sm:text-sm font-bold text-slate-700 mt-0.5">تقرير كفاءة وموازنة خطوط الإنتاج والعمالة</div>
+            <div className="text-[11px] sm:text-xs text-slate-500 mt-1">
               تاريخ التقرير: {new Date().toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' })}
             </div>
           </div>
 
-          <div className="text-left text-xs space-y-1">
+          <div className="text-right sm:text-left text-xs space-y-1 bg-slate-50 sm:bg-transparent p-2.5 sm:p-0 rounded-lg">
             <div><strong>خط الإنتاج:</strong> {line.name}</div>
             <div><strong>الموديل:</strong> {model.name} ({model.code})</div>
             <div><strong>المشرف المسؤول:</strong> {line.supervisor}</div>
@@ -64,7 +64,7 @@ export const PrintReportView: React.FC<PrintReportViewProps> = ({
         </div>
 
         {/* Executive Summary Metrics Box */}
-        <div className="grid grid-cols-4 gap-4 my-6 p-4 bg-slate-50 border border-slate-200 rounded-lg text-center text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4 my-4 sm:my-6 p-3 sm:p-4 bg-slate-50 border border-slate-200 rounded-lg text-center text-xs">
           <div>
             <div className="text-slate-500 font-medium">إجمالي عمال الخط</div>
             <div className="text-xl font-bold font-mono text-slate-900 mt-1 tabular-nums">{workers.length} عامل</div>

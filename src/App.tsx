@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ProductionLine, Model, Worker, SkillLevel, Stage, AuditLogEntry, ActionType } from './types/matrix';
+import { ProductionLine, Model, Worker, SkillLevel, Stage, AuditLogEntry, ActionType, TerminologyConfig } from './types/matrix';
 import { generateInitialLines, generate400Workers } from './utils/mockGenerator';
 import { 
   DEFAULT_WORKSTATION_TARGET, 
   DEFAULT_WORKER_FLEXIBILITY_TARGET, 
   DEFAULT_MIN_QUALIFIED_LEVEL,
+  DEFAULT_TERMINOLOGY,
   STORAGE_KEY_WORKERS,
   STORAGE_KEY_LINES,
   STORAGE_KEY_SETTINGS,
-  STORAGE_KEY_HISTORY
+  STORAGE_KEY_HISTORY,
+  STORAGE_KEY_TERMINOLOGY
 } from './utils/constants';
 import { loadInitialLogs, getActionTypeMeta } from './utils/historyLogger';
 import { Header } from './components/Header';
@@ -17,12 +19,14 @@ import { SkillsMatrixGrid } from './components/SkillsMatrixGrid';
 import { GapAnalysisDashboard } from './components/GapAnalysisDashboard';
 import { ShiftPerformanceView } from './components/ShiftPerformanceView';
 import { WorkerProfilesView } from './components/WorkerProfilesView';
+import { FactorySetupView } from './components/FactorySetupView';
 import { PrintReportView } from './components/PrintReportView';
 import { TargetSettingsModal } from './components/TargetSettingsModal';
 import { ImportExportModal } from './components/ImportExportModal';
 import { WorkerEditModal } from './components/WorkerEditModal';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
 import { HistoryModal } from './components/HistoryModal';
+import { GitHubDeployModal } from './components/GitHubDeployModal';
 import { Footer } from './components/Footer';
 import { calculateWorkerFlexibility } from './utils/matrixCalculations';
 
@@ -83,13 +87,22 @@ export default function App() {
     return DEFAULT_MIN_QUALIFIED_LEVEL;
   });
 
+  // Terminology State (خطوط vs ماكينات / موديلات vs اسطمبات)
+  const [terminology, setTerminology] = useState<TerminologyConfig>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_TERMINOLOGY);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return DEFAULT_TERMINOLOGY;
+  });
+
   // Audit Logs State
   const [logs, setLogs] = useState<AuditLogEntry[]>(() => {
     return loadInitialLogs();
   });
 
   // Navigation & View State
-  const [activeTab, setActiveTab] = useState<'matrix' | 'balancing' | 'performance' | 'workers' | 'print'>('matrix');
+  const [activeTab, setActiveTab] = useState<'matrix' | 'balancing' | 'performance' | 'workers' | 'factory' | 'print'>('matrix');
   const [selectedLineId, setSelectedLineId] = useState<string>(lines[0]?.id || 'LINE-A');
   const [selectedModelId, setSelectedModelId] = useState<string>(lines[0]?.models[0]?.id || 'MOD-A1');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -103,6 +116,7 @@ export default function App() {
   const [workerToDelete, setWorkerToDelete] = useState<Worker | null>(null);
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isGitHubDeployOpen, setIsGitHubDeployOpen] = useState(false);
   const [selectedWorkerForModal, setSelectedWorkerForModal] = useState<Worker | null>(null);
 
   // Persistence to LocalStorage
@@ -130,6 +144,12 @@ export default function App() {
       );
     } catch (e) {}
   }, [targetWorkersPerStage, targetStagesPerWorker, minQualifiedLevel]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_TERMINOLOGY, JSON.stringify(terminology));
+    } catch (e) {}
+  }, [terminology]);
 
   useEffect(() => {
     try {
@@ -162,7 +182,7 @@ export default function App() {
   }, [lines, selectedLineId]);
 
   const selectedModel = useMemo(() => {
-    return selectedLine.models.find(m => m.id === selectedModelId) || selectedLine.models[0];
+    return selectedLine?.models.find(m => m.id === selectedModelId) || selectedLine?.models[0];
   }, [selectedLine, selectedModelId]);
 
   // Synchronize model if line changes
@@ -175,8 +195,9 @@ export default function App() {
 
   // Line Workers (Filtered by line, shift, and search)
   const lineWorkers = useMemo(() => {
+    if (!selectedLine) return [];
     return workers.filter(w => w.lineId === selectedLine.id);
-  }, [workers, selectedLine.id]);
+  }, [workers, selectedLine]);
 
   const filteredLineWorkers = useMemo(() => {
     return lineWorkers.filter(w => {
@@ -193,10 +214,11 @@ export default function App() {
 
   // Stages of currently selected model
   const currentStages = useMemo(() => {
+    if (!selectedModel) return [];
     return selectedModel.stages.map(stage => ({
       ...stage,
-      targetWorkersCount: targetWorkersPerStage,
-      minRequiredLevel: minQualifiedLevel as SkillLevel
+      targetWorkersCount: stage.targetWorkersCount || targetWorkersPerStage,
+      minRequiredLevel: stage.minRequiredLevel || (minQualifiedLevel as SkillLevel)
     }));
   }, [selectedModel, targetWorkersPerStage, minQualifiedLevel]);
 
@@ -231,10 +253,10 @@ export default function App() {
       logAction(
         'skill_update',
         `تعديل مهارة العامل ${targetWorker.name}`,
-        `تم تعديل التقييم في مرحلة "${targetStage.name}" من المستوى ${oldLevel} إلى المستوى ${newLevel}.`
+        `تم تعديل التقييم في ${terminology.stageLabel} "${targetStage.name}" من المستوى ${oldLevel} إلى المستوى ${newLevel}.`
       );
     }
-  }, [workers, currentStages, logAction]);
+  }, [workers, currentStages, logAction, terminology]);
 
   const handleTransferWorkerLine = useCallback((workerId: string, targetLineId: string) => {
     const targetWorker = workers.find(w => w.id === workerId);
@@ -251,10 +273,10 @@ export default function App() {
       logAction(
         'rebalance',
         `نقل العامل ${targetWorker.name} لسد العجز`,
-        `تم تحويل العامل ${targetWorker.name} (${targetWorker.empCode}) إلى خط "${targetLine.name}".`
+        `تم تحويل العامل ${targetWorker.name} (${targetWorker.empCode}) إلى ${terminology.lineLabel} "${targetLine.name}".`
       );
     }
-  }, [workers, lines, logAction]);
+  }, [workers, lines, logAction, terminology]);
 
   const handleSaveWorker = (savedWorker: Worker) => {
     const exists = workers.some(w => w.id === savedWorker.id);
@@ -272,7 +294,7 @@ export default function App() {
       logAction(
         'worker_added',
         `إضافة العامل الجديد ${savedWorker.name}`,
-        `تم تسجيل العامل (الكود: ${savedWorker.empCode}) على خط ${selectedLine.name} في الوردية ${savedWorker.shift}.`
+        `تم تسجيل العامل (الكود: ${savedWorker.empCode}) على ${selectedLine?.name || terminology.lineLabel} في الوردية ${savedWorker.shift}.`
       );
     }
     setWorkerToEdit(null);
@@ -325,7 +347,7 @@ export default function App() {
     logAction(
       'data_imported',
       `استيراد ${newWorkers.length} عامل من ملف Excel`,
-      `تم استيراد وتحديث تقييمات ${newWorkers.length} عامل بنجاح في خط الإنتاج.`
+      `تم استيراد وتحديث تقييمات ${newWorkers.length} عامل بنجاح في ${terminology.lineLabel}.`
     );
   };
 
@@ -340,7 +362,7 @@ export default function App() {
     logAction(
       'data_imported',
       'استعادة الـ 400 عامل التجريبيين',
-      'تمت إعادة توليد 400 عامل واقعي موزعين على كافة خطوط الإنتاج والورديات.'
+      `تمت إعادة توليد 400 عامل واقعي موزعين على كافة ${terminology.lineLabelPlural} والورديات.`
     );
   };
 
@@ -361,8 +383,26 @@ export default function App() {
 
     logAction(
       'target_changed',
-      'تحديث معايير وأهداف الخطوط',
-      `تم تطبيق هدف ${targetWorkersPerStage} عمال لكل مرحلة، والمستوى ${minQualifiedLevel} كحد أدنى، ومرونة ${targetStagesPerWorker} مراحل للعامل.`
+      `تحديث معايير وأهداف ${terminology.lineLabelPlural}`,
+      `تم تطبيق هدف ${targetWorkersPerStage} عمال لكل ${terminology.stageLabel}، والمستوى ${minQualifiedLevel} كحد أدنى، ومرونة ${targetStagesPerWorker} ${terminology.stageLabelPlural} للعامل.`
+    );
+  };
+
+  const handleUpdateTerminology = (newTerm: TerminologyConfig) => {
+    setTerminology(newTerm);
+    logAction(
+      'target_changed',
+      'تغيير نمط ومصطلحات المصنع',
+      `تم تغيير المصطلحات المعتمدة إلى: (${newTerm.lineLabel} / ${newTerm.modelLabel} / ${newTerm.stageLabel}).`
+    );
+  };
+
+  const handleUpdateLines = (newLines: ProductionLine[]) => {
+    setLines(newLines);
+    logAction(
+      'target_changed',
+      `تحديث بنية ${terminology.lineLabelPlural} والاسطمبات`,
+      `تم حفظ التغييرات على قائمة ${terminology.lineLabelPlural} و ${terminology.modelLabelPlural} و ${terminology.stageLabelPlural}.`
     );
   };
 
@@ -390,25 +430,30 @@ export default function App() {
         onResetSampleData={handleReset400Workers}
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenClearAllModal={() => setIsClearAllModalOpen(true)}
+        onOpenGitHubDeployGuide={() => setIsGitHubDeployOpen(true)}
         totalWorkersCount={workers.length}
+        terminology={terminology}
       />
 
-      {/* Production Line, Model & Shift Toolbar */}
-      <LineModelBar
-        lines={lines}
-        selectedLine={selectedLine}
-        onSelectLine={handleSelectLine}
-        selectedModel={selectedModel}
-        onSelectModel={(model) => setSelectedModelId(model.id)}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        selectedShift={selectedShift}
-        onSelectShift={setSelectedShift}
-        workerCountOnLine={lineWorkers.length}
-        totalLineStagesCount={currentStages.length}
-        targetWorkersPerStage={targetWorkersPerStage}
-        qualifiedWorkersMeetingTarget={qualifiedWorkersMeetingTarget}
-      />
+      {/* Production Line / Machine Toolbar (Shown when not in Factory Setup or Print) */}
+      {activeTab !== 'factory' && selectedLine && selectedModel && (
+        <LineModelBar
+          lines={lines}
+          selectedLine={selectedLine}
+          onSelectLine={handleSelectLine}
+          selectedModel={selectedModel}
+          onSelectModel={(model) => setSelectedModelId(model.id)}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          selectedShift={selectedShift}
+          onSelectShift={setSelectedShift}
+          workerCountOnLine={lineWorkers.length}
+          totalLineStagesCount={currentStages.length}
+          targetWorkersPerStage={targetWorkersPerStage}
+          qualifiedWorkersMeetingTarget={qualifiedWorkersMeetingTarget}
+          terminology={terminology}
+        />
+      )}
 
       {/* Main Content Viewport */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-6 lg:p-8 flex flex-col">
@@ -428,7 +473,7 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'balancing' && (
+        {activeTab === 'balancing' && selectedLine && (
           <GapAnalysisDashboard
             stages={currentStages}
             lineWorkers={lineWorkers}
@@ -440,7 +485,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'performance' && (
+        {activeTab === 'performance' && selectedLine && selectedModel && (
           <ShiftPerformanceView
             line={selectedLine}
             model={selectedModel}
@@ -466,7 +511,22 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'print' && (
+        {activeTab === 'factory' && (
+          <FactorySetupView
+            lines={lines}
+            onUpdateLines={handleUpdateLines}
+            terminology={terminology}
+            onUpdateTerminology={handleUpdateTerminology}
+            targetWorkersPerStage={targetWorkersPerStage}
+            onUpdateTargetWorkersPerStage={setTargetWorkersPerStage}
+            targetStagesPerWorker={targetStagesPerWorker}
+            onUpdateTargetStagesPerWorker={setTargetStagesPerWorker}
+            minQualifiedLevel={minQualifiedLevel}
+            onUpdateMinQualifiedLevel={setMinQualifiedLevel}
+          />
+        )}
+
+        {activeTab === 'print' && selectedLine && selectedModel && (
           <PrintReportView
             line={selectedLine}
             model={selectedModel}
@@ -494,9 +554,9 @@ export default function App() {
         onClose={() => setIsImportExportOpen(false)}
         stages={currentStages}
         workers={workers}
-        lineName={selectedLine.name}
-        modelName={selectedModel.name}
-        currentLineId={selectedLine.id}
+        lineName={selectedLine?.name || terminology.lineLabel}
+        modelName={selectedModel?.name || terminology.modelLabel}
+        currentLineId={selectedLine?.id || ''}
         onImportSuccess={handleImportSuccess}
         onReset400Workers={handleReset400Workers}
       />
@@ -510,7 +570,7 @@ export default function App() {
         onSaveWorker={handleSaveWorker}
         workerToEdit={workerToEdit}
         lines={lines}
-        currentLineId={selectedLine.id}
+        currentLineId={selectedLine?.id || ''}
         stages={currentStages}
       />
 
@@ -531,6 +591,11 @@ export default function App() {
         onClose={() => setIsHistoryOpen(false)}
         logs={logs}
         onClearHistory={handleClearHistory}
+      />
+
+      <GitHubDeployModal
+        isOpen={isGitHubDeployOpen}
+        onClose={() => setIsGitHubDeployOpen(false)}
       />
 
       {/* Dedicated Engineering Footer */}

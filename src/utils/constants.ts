@@ -61,4 +61,55 @@ export const STORAGE_KEY_WORKERS = 'matrixpro_workers_v1';
 export const STORAGE_KEY_LINES = 'matrixpro_lines_v1';
 export const STORAGE_KEY_SETTINGS = 'matrixpro_settings_v1';
 export const STORAGE_KEY_HISTORY = 'matrixpro_history_v1';
+export const STORAGE_KEY_TERMINOLOGY = 'matrixpro_terminology_v1';
+
+export const DEFAULT_TERMINOLOGY: import('../types/matrix').TerminologyConfig = {
+  preset: 'lines_models',
+  lineLabel: 'خط إنتاج',
+  lineLabelPlural: 'خطوط الإنتاج',
+  modelLabel: 'موديل',
+  modelLabelPlural: 'الموديلات',
+  stageLabel: 'مرحلة',
+  stageLabelPlural: 'المراحل'
+};
+
+export const TERMINOLOGY_PRESETS: Record<import('../types/matrix').TerminologyPreset, import('../types/matrix').TerminologyConfig> = {
+  lines_models: {
+    preset: 'lines_models',
+    lineLabel: 'خط إنتاج',
+    lineLabelPlural: 'خطوط الإنتاج',
+    modelLabel: 'موديل',
+    modelLabelPlural: 'الموديلات',
+    stageLabel: 'مرحلة',
+    stageLabelPlural: 'المراحل'
+  },
+  machines_molds: {
+    preset: 'machines_molds',
+    lineLabel: 'ماكينة',
+    lineLabelPlural: 'الماكينات',
+    modelLabel: 'اسطمبة',
+    modelLabelPlural: 'الاسطمبات',
+    stageLabel: 'عملية',
+    stageLabelPlural: 'العمليات'
+  },
+  departments_products: {
+    preset: 'departments_products',
+    lineLabel: 'قسم',
+    lineLabelPlural: 'الأقسام',
+    modelLabel: 'منتج',
+    modelLabelPlural: 'المنتجات',
+    stageLabel: 'محطة',
+    stageLabelPlural: 'محطات العمل'
+  },
+  custom: {
+    preset: 'custom',
+    lineLabel: 'ماكينة',
+    lineLabelPlural: 'الماكينات',
+    modelLabel: 'اسطمبة',
+    modelLabelPlural: 'الاسطمبات',
+    stageLabel: 'عملية',
+    stageLabelPlural: 'العمليات'
+  }
+};
+
 

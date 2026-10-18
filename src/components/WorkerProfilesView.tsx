@@ -77,9 +77,9 @@ export const WorkerProfilesView: React.FC<WorkerProfilesViewProps> = ({
     <div className="space-y-6">
       
       {/* Top Header Summary Strip */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-base font-bold text-slate-900 tracking-tight">
+          <h2 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
             متابعة مرونة العمال والمهارات المتعددة (Multi-Skilling Tracker)
           </h2>
           <p className="text-xs text-slate-500 mt-1">
@@ -88,30 +88,30 @@ export const WorkerProfilesView: React.FC<WorkerProfilesViewProps> = ({
         </div>
 
         {/* Aggregate Unboxed Flexibility Rate */}
-        <div className="flex items-center gap-6">
-          <div className="text-left">
-            <div className="text-xs font-semibold text-slate-500">معدل تحقيق الهدف</div>
-            <div className="text-2xl font-black font-mono text-indigo-700 tabular-nums">
+        <div className="grid grid-cols-2 sm:flex items-center gap-4 sm:gap-6 pt-2 md:pt-0 border-t md:border-0 border-slate-100">
+          <div className="text-right sm:text-left">
+            <div className="text-[11px] sm:text-xs font-semibold text-slate-500">معدل تحقيق الهدف</div>
+            <div className="text-2xl sm:text-3xl font-black font-mono text-indigo-700 tabular-nums">
               {percentMet}%
             </div>
           </div>
-          <div className="text-left border-r border-slate-200 pr-6">
-            <div className="text-xs font-semibold text-slate-500">العمال المحققون</div>
-            <div className="text-2xl font-black font-mono text-emerald-700 tabular-nums">
+          <div className="text-right sm:text-left border-r border-slate-200 pr-4 sm:pr-6">
+            <div className="text-[11px] sm:text-xs font-semibold text-slate-500">العمال المحققون</div>
+            <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-700 tabular-nums">
               {targetMetWorkers.length} <span className="text-xs text-slate-400 font-normal">/ {workers.length}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Filter Toolbar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {/* Filter Toolbar with Touch Friendly Horizontal Scroll */}
+      <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         
-        {/* Status segmented tabs */}
-        <div className="inline-flex rounded-lg bg-slate-100 p-1 text-xs font-semibold">
+        {/* Status segmented tabs with mobile scroll */}
+        <div className="flex items-center gap-1 overflow-x-auto matrix-scroll p-1 bg-slate-100 rounded-lg -mx-1 px-1">
           <button
             onClick={() => { setFilterStatus('all'); setPage(1); }}
-            className={`px-3 py-1.5 rounded-md transition-all ${
+            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all shrink-0 ${
               filterStatus === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -119,7 +119,7 @@ export const WorkerProfilesView: React.FC<WorkerProfilesViewProps> = ({
           </button>
           <button
             onClick={() => { setFilterStatus('met'); setPage(1); }}
-            className={`px-3 py-1.5 rounded-md transition-all ${
+            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all shrink-0 ${
               filterStatus === 'met' ? 'bg-white text-emerald-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -127,7 +127,7 @@ export const WorkerProfilesView: React.FC<WorkerProfilesViewProps> = ({
           </button>
           <button
             onClick={() => { setFilterStatus('needs_training'); setPage(1); }}
-            className={`px-3 py-1.5 rounded-md transition-all ${
+            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all shrink-0 ${
               filterStatus === 'needs_training' ? 'bg-white text-amber-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -136,8 +136,8 @@ export const WorkerProfilesView: React.FC<WorkerProfilesViewProps> = ({
         </div>
 
         {/* Search */}
-        <div className="relative min-w-[220px]">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
+        <div className="relative w-full sm:w-64">
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
             value={search}

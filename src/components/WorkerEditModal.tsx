@@ -82,7 +82,7 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
       <div className="bg-white rounded-2xl max-w-xl w-full max-h-[92vh] overflow-hidden flex flex-col shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
         
         {/* Header */}
@@ -109,109 +109,112 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
+        {/* Form Body & Pinned Footer */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           
-          {error && (
-            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs font-semibold">
-              {error}
-            </div>
-          )}
+          <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1 matrix-scroll">
+            {error && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs font-semibold">
+                {error}
+              </div>
+            )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-bold text-slate-800 block mb-1">الكود الوظيفي (ID):</label>
-              <input
-                type="text"
-                required
-                value={empCode}
-                onChange={(e) => setEmpCode(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-slate-900"
-              />
-            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-800 block mb-1">الكود الوظيفي (ID):</label>
+                <input
+                  type="text"
+                  required
+                  value={empCode}
+                  onChange={(e) => setEmpCode(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono font-bold focus:outline-none focus:ring-1 focus:ring-slate-900"
+                />
+              </div>
 
-            <div>
-              <label className="text-xs font-bold text-slate-800 block mb-1">اسم العامل بالكامل:</label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="مثال: يوسف إبراهيم سالم"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-slate-900"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-bold text-slate-800 block mb-1">خط الإنتاج:</label>
-              <select
-                value={lineId}
-                onChange={(e) => setLineId(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900"
-              >
-                {lines.map(l => (
-                  <option key={l.id} value={l.id}>{l.name}</option>
-                ))}
-              </select>
+              <div>
+                <label className="text-xs font-bold text-slate-800 block mb-1">اسم العامل بالكامل:</label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="مثال: يوسف إبراهيم سالم"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-slate-900"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="text-xs font-bold text-slate-800 block mb-1">الوردية:</label>
-              <select
-                value={shift}
-                onChange={(e) => setShift(e.target.value as any)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900"
-              >
-                <option value="A">الوردية A (صباحي)</option>
-                <option value="B">الوردية B (مسائي)</option>
-                <option value="C">الوردية C (ليلي)</option>
-              </select>
-            </div>
-          </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div>
+                <label className="text-xs font-bold text-slate-800 block mb-1">خط الإنتاج:</label>
+                <select
+                  value={lineId}
+                  onChange={(e) => setLineId(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900"
+                >
+                  {lines.map(l => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </select>
+              </div>
 
-          {/* Skills assignment */}
-          <div className="pt-2">
-            <label className="text-xs font-bold text-slate-800 block mb-2">
-              تقييم مهارات العامل على مراحل هذا الموديل (0 إلى 4):
-            </label>
-            <div className="space-y-2 max-h-52 overflow-y-auto p-1 matrix-scroll">
-              {stages.map((stg) => {
-                const currentLevel = (skills[stg.id] ?? 0) as SkillLevel;
-                return (
-                  <div key={stg.id} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-                    <div className="truncate max-w-[200px]">
-                      <span className="font-semibold text-slate-800 block">{stg.name}</span>
-                      <span className="text-[10px] text-slate-400 font-mono">كود: {stg.code}</span>
+              <div>
+                <label className="text-xs font-bold text-slate-800 block mb-1">الوردية:</label>
+                <select
+                  value={shift}
+                  onChange={(e) => setShift(e.target.value as any)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-slate-900"
+                >
+                  <option value="A">الوردية A (صباحي)</option>
+                  <option value="B">الوردية B (مسائي)</option>
+                  <option value="C">الوردية C (ليلي)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Skills assignment */}
+            <div className="pt-2">
+              <label className="text-xs font-bold text-slate-800 block mb-2">
+                تقييم مهارات العامل على مراحل هذا الموديل (0 إلى 4):
+              </label>
+              <div className="space-y-2 max-h-52 overflow-y-auto p-1 matrix-scroll">
+                {stages.map((stg) => {
+                  const currentLevel = (skills[stg.id] ?? 0) as SkillLevel;
+                  return (
+                    <div key={stg.id} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                      <div className="truncate max-w-[200px]">
+                        <span className="font-semibold text-slate-800 block">{stg.name}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">كود: {stg.code}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {([0, 1, 2, 3, 4] as SkillLevel[]).map((lvl) => {
+                          const def = SKILL_DEFINITIONS[lvl];
+                          const isSelected = currentLevel === lvl;
+                          return (
+                            <button
+                              key={lvl}
+                              type="button"
+                              onClick={() => handleSkillChange(stg.id, lvl)}
+                              className={`w-7 h-7 rounded font-mono text-xs font-bold transition-all ${
+                                isSelected
+                                  ? `${def.bgClass} ${def.borderClass} ${def.textClass} ring-2 ring-slate-900 font-bold scale-105 shadow-xs`
+                                  : 'bg-white border border-slate-200 text-slate-400 hover:text-slate-700'
+                              }`}
+                            >
+                              {lvl}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {([0, 1, 2, 3, 4] as SkillLevel[]).map((lvl) => {
-                        const def = SKILL_DEFINITIONS[lvl];
-                        const isSelected = currentLevel === lvl;
-                        return (
-                          <button
-                            key={lvl}
-                            type="button"
-                            onClick={() => handleSkillChange(stg.id, lvl)}
-                            className={`w-7 h-7 rounded font-mono text-xs font-bold transition-all ${
-                              isSelected
-                                ? `${def.bgClass} ${def.borderClass} ${def.textClass} ring-2 ring-slate-900 font-bold scale-105 shadow-xs`
-                                : 'bg-white border border-slate-200 text-slate-400 hover:text-slate-700'
-                            }`}
-                          >
-                            {lvl}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          <div className="p-4 bg-slate-50 -mx-4 sm:-mx-6 -mb-4 sm:-mb-6 border-t border-slate-200 flex justify-end gap-2">
+          {/* Pinned Action Buttons Footer */}
+          <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2 shrink-0">
             <button
               type="button"
               onClick={onClose}
@@ -224,7 +227,7 @@ export const WorkerEditModal: React.FC<WorkerEditModalProps> = ({
               className="px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
             >
               <Check className="w-3.5 h-3.5" />
-              {isEditMode ? 'حفظ التعديلات' : 'إضافة العامل'}
+              <span>{isEditMode ? 'حفظ التعديلات' : 'إضافة العامل'}</span>
             </button>
           </div>
 

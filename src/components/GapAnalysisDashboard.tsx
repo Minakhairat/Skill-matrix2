@@ -63,83 +63,83 @@ export const GapAnalysisDashboard: React.FC<GapAnalysisDashboardProps> = ({
   return (
     <div className="space-y-4 sm:space-y-6">
       
-      {/* 4-KPI Executive Summary Strip (Responsive 1-col on mobile, 2 on tablet, 4 on desktop) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      {/* 4-KPI Executive Summary Strip (Responsive: 2-col on mobile, 4 on desktop) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         
         {/* KPI 1: Overall Line Coverage */}
-        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
+        <div className="bg-white p-3 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">نسبة تغطية مراحل الخط</span>
-            <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-500">نسبة التغطية</span>
+            <span className={`text-[10px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.5 rounded ${
               overallCoverageRate >= 80 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
             }`}>
-              {coveredStages} من {totalStages}
+              {coveredStages}/{totalStages}
             </span>
           </div>
-          <div className="mt-2.5 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-slate-900 tabular-nums">
+          <div className="mt-1.5 sm:mt-2.5 flex items-baseline gap-2">
+            <span className="text-xl sm:text-3xl font-black font-mono tracking-tight text-slate-900 tabular-nums">
               {overallCoverageRate}%
             </span>
           </div>
-          <div className="mt-1.5 text-[11px] sm:text-xs text-slate-500">
-            مراحل مستوفية للهدف ({stageMetrics[0]?.target || 5} عمال بمستوى ≥ 3)
+          <div className="mt-1 text-[10px] sm:text-xs text-slate-500 truncate">
+            المراحل المستوفية للهدف
           </div>
         </div>
 
         {/* KPI 2: Worker Multi-Skilling Flexibility Rate */}
-        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
+        <div className="bg-white p-3 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">مرونة العمال (هدف 3 مراحل)</span>
-            <TrendingUp className="w-4 h-4 text-indigo-600" />
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-500">مرونة العمال</span>
+            <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" />
           </div>
-          <div className="mt-2.5 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-indigo-900 tabular-nums">
+          <div className="mt-1.5 sm:mt-2.5 flex items-baseline gap-1.5">
+            <span className="text-xl sm:text-3xl font-black font-mono tracking-tight text-indigo-900 tabular-nums">
               {multiSkilledRate}%
             </span>
-            <span className="text-[11px] text-slate-500">
-              ({multiSkilledWorkersCount} عامل)
+            <span className="text-[10px] sm:text-[11px] text-slate-500">
+              ({multiSkilledWorkersCount})
             </span>
           </div>
-          <div className="mt-1.5 text-[11px] sm:text-xs text-slate-500">
-            عمال يتقنون 3 مراحل أو أكثر بمستوى ≥ 3
+          <div className="mt-1 text-[10px] sm:text-xs text-slate-500 truncate">
+            محققو هدف الـ 3 مراحل
           </div>
         </div>
 
         {/* KPI 3: Stages with Shortage */}
-        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
+        <div className="bg-white p-3 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">مراحل بها عجز</span>
-            <AlertTriangle className={`w-4 h-4 ${shortageStages > 0 ? 'text-amber-500' : 'text-slate-400'}`} />
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-500">مراحل بها عجز</span>
+            <AlertTriangle className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${shortageStages > 0 ? 'text-amber-500' : 'text-slate-400'}`} />
           </div>
-          <div className="mt-2.5 flex items-baseline gap-2">
-            <span className={`text-2xl sm:text-3xl font-black font-mono tracking-tight tabular-nums ${
+          <div className="mt-1.5 sm:mt-2.5 flex items-baseline gap-1.5">
+            <span className={`text-xl sm:text-3xl font-black font-mono tracking-tight tabular-nums ${
               shortageStages > 0 ? 'text-amber-600' : 'text-slate-900'
             }`}>
               {shortageStages}
             </span>
-            <span className="text-xs text-slate-500">مراحل</span>
+            <span className="text-[10px] sm:text-xs text-slate-500">مرحلة</span>
           </div>
-          <div className="mt-1.5 text-[11px] sm:text-xs text-slate-500">
-            تحتاج زيادة عدد العمال المؤهلين
+          <div className="mt-1 text-[10px] sm:text-xs text-slate-500 truncate">
+            تحتاج عمال مؤهلين
           </div>
         </div>
 
         {/* KPI 4: Critical Bottlenecks */}
-        <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
+        <div className="bg-white p-3 sm:p-5 rounded-xl border border-slate-200 shadow-xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">عجز حرج (نقص ≥ 2 عمال)</span>
-            <ShieldAlert className={`w-4 h-4 ${criticalStages > 0 ? 'text-rose-600' : 'text-emerald-500'}`} />
+            <span className="text-[11px] sm:text-xs font-semibold text-slate-500">عجز حرج</span>
+            <ShieldAlert className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${criticalStages > 0 ? 'text-rose-600' : 'text-emerald-500'}`} />
           </div>
-          <div className="mt-2.5 flex items-baseline gap-2">
-            <span className={`text-2xl sm:text-3xl font-black font-mono tracking-tight tabular-nums ${
+          <div className="mt-1.5 sm:mt-2.5 flex items-baseline gap-1.5">
+            <span className={`text-xl sm:text-3xl font-black font-mono tracking-tight tabular-nums ${
               criticalStages > 0 ? 'text-rose-600' : 'text-emerald-700'
             }`}>
               {criticalStages}
             </span>
-            <span className="text-xs text-slate-500">مراحل حرجة</span>
+            <span className="text-[10px] sm:text-xs text-slate-500">حرجة</span>
           </div>
-          <div className="mt-1.5 text-[11px] sm:text-xs text-slate-500">
-            خطر توقف الخط عند غياب أحد العمال
+          <div className="mt-1 text-[10px] sm:text-xs text-slate-500 truncate">
+            خطر توقف الخط (نقص ≥ 2)
           </div>
         </div>
 

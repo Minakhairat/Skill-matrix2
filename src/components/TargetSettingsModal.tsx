@@ -147,31 +147,31 @@ export const TargetSettingsModal: React.FC<TargetSettingsModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+        <div className="p-3.5 sm:p-4 bg-slate-50 border-t border-slate-200 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0">
           <button
             type="button"
             onClick={handleResetDefaults}
-            className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors"
+            className="flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors py-1 sm:py-0"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            استعادة الأهداف الافتراضية
+            <span>استعادة الأهداف الافتراضية</span>
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-900"
+              className="px-3.5 py-2 text-xs font-medium text-slate-600 hover:text-slate-900"
             >
               إلغاء
             </button>
             <button
               type="button"
               onClick={handleSave}
-              className="px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
+              className="px-4 sm:px-5 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition-colors flex items-center justify-center gap-1.5"
             >
               <Check className="w-3.5 h-3.5" />
-              تطبيق الأهداف وتحديث الحسابات
+              <span>تطبيق الأهداف</span>
             </button>
           </div>
         </div>
