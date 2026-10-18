@@ -134,4 +134,7 @@ export interface TerminologyConfig {
   stageLabelPlural: string; // e.g. "المراحل" أو "العمليات"
 }
 
-
+export interface PlantLeadership {
+  engineerName: string; // اسم المهندس المسؤول (مثل: م. مينا خيرت)
+  managerName: string; // اسم مدير الإدارة / العمليات
+}

@@ -8,13 +8,15 @@ interface PrintReportViewProps {
   model: Model;
   stages: Stage[];
   workers: Worker[];
+  leadership?: import('../types/matrix').PlantLeadership;
 }
 
 export const PrintReportView: React.FC<PrintReportViewProps> = ({
   line,
   model,
   stages,
-  workers
+  workers,
+  leadership
 }) => {
   const stageMetrics = stages.map(s => calculateStageMetric(s, workers));
   const coveredCount = stageMetrics.filter(m => m.isCovered).length;
@@ -59,7 +61,12 @@ export const PrintReportView: React.FC<PrintReportViewProps> = ({
           <div className="text-right sm:text-left text-xs space-y-1 bg-slate-50 sm:bg-transparent p-2.5 sm:p-0 rounded-lg">
             <div><strong>خط الإنتاج:</strong> {line.name}</div>
             <div><strong>الموديل:</strong> {model.name} ({model.code})</div>
-            <div><strong>المشرف المسؤول:</strong> {line.supervisor}</div>
+            <div><strong>المشرف المسؤول:</strong> {line.supervisor || 'غير محدد'}</div>
+            {leadership && (
+              <div className="text-slate-600">
+                <strong>المهندس المسؤول:</strong> {leadership.engineerName}
+              </div>
+            )}
           </div>
         </div>
 
@@ -150,15 +157,18 @@ export const PrintReportView: React.FC<PrintReportViewProps> = ({
         <div className="mt-12 pt-6 border-t border-slate-300 grid grid-cols-3 gap-8 text-xs text-center">
           <div>
             <div className="font-bold text-slate-900">مشرف الخط</div>
-            <div className="mt-8 text-slate-400">التوقيع: ............................</div>
+            <div className="text-slate-700 font-semibold mt-1">{line.supervisor || 'غير محدد'}</div>
+            <div className="mt-6 text-slate-400">التوقيع: ............................</div>
           </div>
           <div>
             <div className="font-bold text-slate-900">مهندس الإنتاج والـ Lean</div>
-            <div className="mt-8 text-slate-400">التوقيع: ............................</div>
+            <div className="text-slate-700 font-semibold mt-1">{leadership?.engineerName || 'م. مينا خيرت'}</div>
+            <div className="mt-6 text-slate-400">التوقيع: ............................</div>
           </div>
           <div>
             <div className="font-bold text-slate-900">مدير المصنع والعمليات</div>
-            <div className="mt-8 text-slate-400">التوقيع: ............................</div>
+            <div className="text-slate-700 font-semibold mt-1">{leadership?.managerName || 'أ. أحمد فؤاد'}</div>
+            <div className="mt-6 text-slate-400">التوقيع: ............................</div>
           </div>
         </div>
 

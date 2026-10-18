@@ -1,24 +1,27 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ProductionLine, Model, Worker, SkillLevel, Stage, AuditLogEntry, ActionType, TerminologyConfig } from './types/matrix';
+import { ProductionLine, Model, Worker, SkillLevel, Stage, AuditLogEntry, ActionType, TerminologyConfig, PlantLeadership } from './types/matrix';
 import { generateInitialLines, generate400Workers } from './utils/mockGenerator';
 import { 
   DEFAULT_WORKSTATION_TARGET, 
   DEFAULT_WORKER_FLEXIBILITY_TARGET, 
   DEFAULT_MIN_QUALIFIED_LEVEL,
   DEFAULT_TERMINOLOGY,
+  DEFAULT_LEADERSHIP,
   STORAGE_KEY_WORKERS,
   STORAGE_KEY_LINES,
   STORAGE_KEY_SETTINGS,
   STORAGE_KEY_HISTORY,
-  STORAGE_KEY_TERMINOLOGY
+  STORAGE_KEY_TERMINOLOGY,
+  STORAGE_KEY_LEADERSHIP
 } from './utils/constants';
 import { loadInitialLogs, getActionTypeMeta } from './utils/historyLogger';
-import { Header } from './components/Header';
+import { Header, TabType } from './components/Header';
 import { LineModelBar } from './components/LineModelBar';
 import { SkillsMatrixGrid } from './components/SkillsMatrixGrid';
 import { GapAnalysisDashboard } from './components/GapAnalysisDashboard';
 import { ShiftPerformanceView } from './components/ShiftPerformanceView';
 import { WorkerProfilesView } from './components/WorkerProfilesView';
+import { AIAdvisorView } from './components/AIAdvisorView';
 import { FactorySetupView } from './components/FactorySetupView';
 import { PrintReportView } from './components/PrintReportView';
 import { TargetSettingsModal } from './components/TargetSettingsModal';
@@ -26,7 +29,6 @@ import { ImportExportModal } from './components/ImportExportModal';
 import { WorkerEditModal } from './components/WorkerEditModal';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
 import { HistoryModal } from './components/HistoryModal';
-import { GitHubDeployModal } from './components/GitHubDeployModal';
 import { Footer } from './components/Footer';
 import { calculateWorkerFlexibility } from './utils/matrixCalculations';
 
@@ -96,13 +98,22 @@ export default function App() {
     return DEFAULT_TERMINOLOGY;
   });
 
+  // Plant Leadership State (مشرفو الخطوط، المهندس، مدير الإدارة)
+  const [leadership, setLeadership] = useState<PlantLeadership>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_LEADERSHIP);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return DEFAULT_LEADERSHIP;
+  });
+
   // Audit Logs State
   const [logs, setLogs] = useState<AuditLogEntry[]>(() => {
     return loadInitialLogs();
   });
 
   // Navigation & View State
-  const [activeTab, setActiveTab] = useState<'matrix' | 'balancing' | 'performance' | 'workers' | 'factory' | 'print'>('matrix');
+  const [activeTab, setActiveTab] = useState<TabType>('matrix');
   const [selectedLineId, setSelectedLineId] = useState<string>(lines[0]?.id || 'LINE-A');
   const [selectedModelId, setSelectedModelId] = useState<string>(lines[0]?.models[0]?.id || 'MOD-A1');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -116,7 +127,6 @@ export default function App() {
   const [workerToDelete, setWorkerToDelete] = useState<Worker | null>(null);
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [isGitHubDeployOpen, setIsGitHubDeployOpen] = useState(false);
   const [selectedWorkerForModal, setSelectedWorkerForModal] = useState<Worker | null>(null);
 
   // Persistence to LocalStorage
@@ -150,6 +160,12 @@ export default function App() {
       localStorage.setItem(STORAGE_KEY_TERMINOLOGY, JSON.stringify(terminology));
     } catch (e) {}
   }, [terminology]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_LEADERSHIP, JSON.stringify(leadership));
+    } catch (e) {}
+  }, [leadership]);
 
   useEffect(() => {
     try {
@@ -417,7 +433,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900" dir="rtl">
       
-      {/* 3-Zone Top Navigation Bar */}
+      {/* Top Responsive Navigation Bar */}
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -430,7 +446,6 @@ export default function App() {
         onResetSampleData={handleReset400Workers}
         onOpenHistory={() => setIsHistoryOpen(true)}
         onOpenClearAllModal={() => setIsClearAllModalOpen(true)}
-        onOpenGitHubDeployGuide={() => setIsGitHubDeployOpen(true)}
         totalWorkersCount={workers.length}
         terminology={terminology}
       />
@@ -485,6 +500,18 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'ai-advisor' && selectedLine && selectedModel && (
+          <AIAdvisorView
+            line={selectedLine}
+            model={selectedModel}
+            stages={currentStages}
+            lineWorkers={lineWorkers}
+            allWorkers={workers}
+            leadership={leadership}
+            onNavigateToMatrix={() => setActiveTab('matrix')}
+          />
+        )}
+
         {activeTab === 'performance' && selectedLine && selectedModel && (
           <ShiftPerformanceView
             line={selectedLine}
@@ -523,6 +550,8 @@ export default function App() {
             onUpdateTargetStagesPerWorker={setTargetStagesPerWorker}
             minQualifiedLevel={minQualifiedLevel}
             onUpdateMinQualifiedLevel={setMinQualifiedLevel}
+            leadership={leadership}
+            onUpdateLeadership={setLeadership}
           />
         )}
 
@@ -532,6 +561,7 @@ export default function App() {
             model={selectedModel}
             stages={currentStages}
             workers={lineWorkers}
+            leadership={leadership}
           />
         )}
       </main>
@@ -591,11 +621,6 @@ export default function App() {
         onClose={() => setIsHistoryOpen(false)}
         logs={logs}
         onClearHistory={handleClearHistory}
-      />
-
-      <GitHubDeployModal
-        isOpen={isGitHubDeployOpen}
-        onClose={() => setIsGitHubDeployOpen(false)}
       />
 
       {/* Dedicated Engineering Footer */}

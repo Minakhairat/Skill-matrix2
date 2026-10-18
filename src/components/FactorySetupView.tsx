@@ -5,7 +5,8 @@ import {
   Stage, 
   TerminologyConfig, 
   TerminologyPreset,
-  SkillLevel
+  SkillLevel,
+  PlantLeadership
 } from '../types/matrix';
 import { TERMINOLOGY_PRESETS } from '../utils/constants';
 import { 
@@ -23,7 +24,8 @@ import {
   Layers, 
   ChevronRight,
   HelpCircle,
-  AlertCircle
+  AlertCircle,
+  Users
 } from 'lucide-react';
 
 interface FactorySetupViewProps {
@@ -37,6 +39,8 @@ interface FactorySetupViewProps {
   onUpdateTargetStagesPerWorker: (val: number) => void;
   minQualifiedLevel: number;
   onUpdateMinQualifiedLevel: (val: number) => void;
+  leadership: PlantLeadership;
+  onUpdateLeadership: (leadership: PlantLeadership) => void;
 }
 
 export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
@@ -49,11 +53,18 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
   targetStagesPerWorker,
   onUpdateTargetStagesPerWorker,
   minQualifiedLevel,
-  onUpdateMinQualifiedLevel
+  onUpdateMinQualifiedLevel,
+  leadership,
+  onUpdateLeadership
 }) => {
   // Navigation inside Setup View
   const [selectedLineId, setSelectedLineId] = useState<string>(lines[0]?.id || '');
   const [selectedModelId, setSelectedModelId] = useState<string>(lines[0]?.models[0]?.id || '');
+
+  // Leadership state
+  const [engineerName, setEngineerName] = useState(leadership.engineerName);
+  const [managerName, setManagerName] = useState(leadership.managerName);
+  const [leadershipSaved, setLeadershipSaved] = useState(false);
 
   // Mobile active sub-tab: 'lines' | 'models' | 'stages'
   const [mobileSetupTab, setMobileSetupTab] = useState<'lines' | 'models' | 'stages'>('lines');
@@ -105,6 +116,27 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
       setCustomModelLabel(p.modelLabel);
       setCustomStageLabel(p.stageLabel);
     }
+  };
+
+  // Leadership Handlers
+  const handleSaveLeadership = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateLeadership({
+      engineerName: engineerName.trim(),
+      managerName: managerName.trim()
+    });
+    setLeadershipSaved(true);
+    setTimeout(() => setLeadershipSaved(false), 2500);
+  };
+
+  const handleUpdateLineSupervisor = (lineId: string, supervisor: string) => {
+    const updated = lines.map(l => {
+      if (l.id === lineId) {
+        return { ...l, supervisor: supervisor.trim() };
+      }
+      return l;
+    });
+    onUpdateLines(updated);
   };
 
   // Line / Machine Handlers
@@ -533,6 +565,104 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
           </button>
 
         </div>
+      </div>
+
+      {/* SECTION 2: PLANT LEADERSHIP & SUPERVISORS (إدارة المشرفين، المهندس، ومدير الإدارة) */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-purple-50 text-purple-700 rounded-lg">
+                <Users className="w-5 h-5" />
+              </span>
+              <h2 className="text-sm sm:text-base font-bold text-slate-900">
+                إدارة القيادة والمشرفين (مشرفو الـ {terminology.lineLabelPlural}، المهندس المسؤول، مدير الإدارة)
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              تظهر هذه الأسماء في تقارير الطباعة والتدقيق الرسمية، واستشارات الذكاء الاصطناعي، وسجلات الجودة.
+            </p>
+          </div>
+        </div>
+
+        {/* Leadership Inputs: Engineer & Department Manager */}
+        <form onSubmit={handleSaveLeadership} className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                اسم المهندس المسؤول (Production / Lean Engineer):
+              </label>
+              <input
+                type="text"
+                value={engineerName}
+                onChange={(e) => setEngineerName(e.target.value)}
+                placeholder="مثال: م. مينا خيرت"
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                اسم مدير الإدارة / العمليات (Operations / Plant Manager):
+              </label>
+              <input
+                type="text"
+                value={managerName}
+                onChange={(e) => setManagerName(e.target.value)}
+                placeholder="مثال: أ. أحمد فؤاد (مدير العمليات)"
+                className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <span className="text-[11px] text-slate-500">
+              * سيتم حفظ الاسمين تلقائياً في ذاكرة البرنامج والتقارير المطبوعة.
+            </span>
+            <button
+              type="submit"
+              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors shrink-0"
+            >
+              <Save className="w-3.5 h-3.5" />
+              <span>{leadershipSaved ? 'تم الحفظ بنجاح ✓' : 'حفظ بيانات الإدارة'}</span>
+            </button>
+          </div>
+        </form>
+
+        {/* Quick Supervisors Overview & Editing Table */}
+        <div className="mt-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+              <span>مشرفو الـ {terminology.lineLabelPlural} والماكينات المسجلون:</span>
+              <span className="text-[10px] text-slate-500">({lines.length} {terminology.lineLabelPlural})</span>
+            </h3>
+            <span className="text-[10px] text-slate-500">
+              تعديل مباشر: اكتب اسم المشرف وسيحفظ تلقائياً
+            </span>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {lines.map((ln) => (
+              <div key={ln.id} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 truncate">{ln.name}</span>
+                  <span className="font-mono text-[10px] text-slate-500">{ln.code}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-500 shrink-0">المشرف:</span>
+                  <input
+                    type="text"
+                    defaultValue={ln.supervisor}
+                    onBlur={(e) => handleUpdateLineSupervisor(ln.id, e.target.value)}
+                    placeholder="اسم المشرف المسؤول"
+                    className="flex-1 px-2 py-1 text-xs bg-white border border-slate-300 rounded text-slate-900 focus:ring-1 focus:ring-purple-500"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
       </div>
 
       {/* MOBILE SUB-NAVIGATION TABS (Shown on screens < lg to prevent 1500px tall vertical stacking) */}

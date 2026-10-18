@@ -112,4 +112,11 @@ export const TERMINOLOGY_PRESETS: Record<import('../types/matrix').TerminologyPr
   }
 };
 
+export const STORAGE_KEY_LEADERSHIP = 'matrixpro_leadership_v1';
+
+export const DEFAULT_LEADERSHIP: import('../types/matrix').PlantLeadership = {
+  engineerName: 'م. مينا خيرت',
+  managerName: 'أ. أحمد فؤاد (مدير العمليات والإدارة)'
+};
+
 
