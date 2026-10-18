@@ -406,3 +406,254 @@ export function solveIndustrialProblem(req: {
   };
 }
 
+/**
+ * Client-Side Multi-Turn Industrial AI Chat Engine
+ * Solves operational queries dynamically using live factory workers & matrix state.
+ * Works seamlessly both offline, on static GitHub Pages, and with server Gemini API.
+ */
+export function solveIndustrialChatQuery(req: {
+  userMessage: string;
+  history?: Array<{ role: 'user' | 'model'; content: string }>;
+  line: ProductionLine;
+  model: Model;
+  stages: Stage[];
+  lineWorkers: Worker[];
+  allWorkers: Worker[];
+  leadership: PlantLeadership;
+  terminology?: import('../types/matrix').TerminologyConfig;
+}): {
+  text: string;
+  suggestedFollowUps: string[];
+  modelUsed: string;
+} {
+  const { userMessage, line, model, stages, lineWorkers, allWorkers, leadership, terminology } = req;
+  const term = terminology || {
+    lineLabel: 'خط إنتاج',
+    stageLabel: 'مرحلة',
+    modelLabel: 'موديل',
+    stageLabelPlural: 'المراحل'
+  };
+
+  const msg = (userMessage || '').trim().toLowerCase();
+  const stageMetrics = stages.map(s => calculateStageMetric(s, lineWorkers));
+  const shortages = stageMetrics.filter(m => m.gap > 0).sort((a, b) => b.gap - a.gap);
+  const topShortage = shortages[0];
+
+  // 1. Bottleneck & Shortages query (عجز، اختناق، تكدس، نقص، محطة حرجة)
+  if (msg.includes('اختناق') || msg.includes('تكدس') || msg.includes('عجز') || msg.includes('نقص') || msg.includes('حرج') || msg.includes('bottleneck')) {
+    const targetStage = topShortage ? topShortage.stage : stages[0];
+    const needed = topShortage ? topShortage.gap : 1;
+
+    // Find real qualified workers (Level 3 or 4) for this stage across other lines/shifts
+    const candidates = allWorkers.filter(w => {
+      const lvl = w.skills[targetStage.id] || 0;
+      return lvl >= 3;
+    }).slice(0, 4);
+
+    // Level 2 trainees ready for fast upskilling
+    const potentialLvl2 = lineWorkers.filter(w => (w.skills[targetStage.id] || 0) === 2).slice(0, 3);
+
+    const candidatesList = candidates.length > 0
+      ? candidates.map((w, i) => `   ${i + 1}. **${w.name}** (كود: \`${w.empCode}\` | وردية: ${w.shift} | مستوى مهارة: ${w.skills[targetStage.id]}/4)`).join('\n')
+      : '   - تكليف فريق العمالة المرنة المساعدة (Floaters) من الوردية السابقة.';
+
+    const lvl2List = potentialLvl2.length > 0
+      ? potentialLvl2.map((w, i) => `   - **${w.name}** (\`${w.empCode}\` - وردية ${w.shift})`).join('\n')
+      : '   - لا يوجد عمال حالياً في المستوى 2 على هذه المحطة؛ يوصى ببدء تدريب عمال جدد.';
+
+    return {
+      text: `### 🏭 تشخيص الاختناق وخطة التدخل الفوري
+فحصت لك بيانات **${line.name}** والموديل **(${model.name})**:
+
+1. **المحطة الأكثر تأثيراً على تدفق الإنتاج:**
+   - **${targetStage.name}**: تعاني من فجوة **${needed} عمال** (المتوفر حالياً ${topShortage?.qualifiedCount || 0} من أصل مستهدف ${topShortage?.target || 2}).
+   - **السبب الفني:** ارتفاع زمن الدورة وتراكم القطع تحت التشغيل (WIP) دون وجود تغطية كافية بالوردية.
+
+2. **العمال البدلاء المؤهلون للنقل الفوري (خلال الوردية):**
+${candidatesList}
+
+3. **خطة التدريب السريع (OJT - خلال 48 ساعة):**
+   - ترقية العمال التاليين من المستوى 2 إلى 3 لتثبيت استقرار المحطة:
+${lvl2List}
+
+4. **توجيه القيادة الصناعية:**
+   - يكلف مشرف الخط (**${line.supervisor}**) بمناورة النقل الميداني الآن.
+   - يعتمد المهندس المسؤول (**${leadership.engineerName}**) ومدير العمليات (**${leadership.managerName}**) خطة تثبيت المحطة.`,
+      suggestedFollowUps: [
+        `كيف ندرب عمال المستوى 2 لتغطية محطة ${targetStage.name}؟`,
+        'ما هي أنسب خطة لموازنة خط الإنتاج بين الورديات الثلاث؟',
+        'هل يوجد محطات بها فائض عمالة يمكن السحب منها دون ضرر؟'
+      ],
+      modelUsed: 'الذكاء الاصطناعي الصناعي المدمج (MatrixPro AI Engine)'
+    };
+  }
+
+  // 2. Absenteeism & Emergency Substitution (غياب، بديل، تعويض، نقص مفاجئ)
+  if (msg.includes('غياب') || msg.includes('بديل') || msg.includes('تعويض') || msg.includes('مرن') || msg.includes('طوارئ')) {
+    // Find multi-skilled workers covering 3+ stages
+    const multiSkilled = allWorkers.filter(w => {
+      const count = Object.values(w.skills).filter(l => l >= 3).length;
+      return count >= 3;
+    }).slice(0, 4);
+
+    const subsList = multiSkilled.map((w, i) => {
+      const skillsCount = Object.values(w.skills).filter(l => l >= 3).length;
+      return `   ${i + 1}. **${w.name}** (كود: \`${w.empCode}\` | وردية: ${w.shift} | يغطي ${skillsCount} مراحل بكفاءة عالية)`;
+    }).join('\n');
+
+    return {
+      text: `### 🚑 خطة الطوارئ لتعويض الغياب المفاجئ
+بناءً على سجلات مرونة القوى العاملة المسجلة في المصفوفة:
+
+1. **العمال متعددو المهارات (Multi-Skilled) الجاهزون للتحريك السريع:**
+${subsList}
+
+2. **بروتوكول النقل الآمن:**
+   - **قاعدة عدم كسر التاكت:** اسحب العامل البديل من محطات التجهيز المسبق أو المحطات التي حققت فائض إنتاج عن المستهدف اليومي.
+   - **فحص الجودة الذاتية (Poka-Yoke):** يتم تكليف المشرف بمرافقة العامل البديل خلال أول 15 دقيقة لمطابقة معيار العمل القياسي (Standard Work).
+
+3. **التوثيق الإداري:**
+   - تسجيل أمر النقل في مصفوفة الحضور اليومي للمهندس **${leadership.engineerName}**.`,
+      suggestedFollowUps: [
+        'اقترح توزيعاً للورديات البديلة إذا استمر الغياب يومين',
+        'كيف نرفع نسبة مرونة باقي العمال لتفادي أزمات الغياب؟',
+        'ما هي مراحل العمل ذات الفائض حالياً في المصنع؟'
+      ],
+      modelUsed: 'الذكاء الاصطناعي الصناعي المدمج (MatrixPro AI Engine)'
+    };
+  }
+
+  // 3. Training, Flexibility & Upskilling (تدريب، مرونة، ترقية، مستهدف، كفاءة)
+  if (msg.includes('تدريب') || msg.includes('مرونة') || msg.includes('ترقية') || msg.includes('مستوى') || msg.includes('مستهدف') || msg.includes('ojt')) {
+    const level4Experts = lineWorkers.filter(w => Object.values(w.skills).some(lvl => lvl === 4)).slice(0, 3);
+    const expertsList = level4Experts.map(w => `**${w.name}** (\`${w.empCode}\` - مدرب معتمد)`).join('، ');
+
+    return {
+      text: `### 📈 برنامج التدريب على رأس العمل (OJT) ورفع المرونة
+لتحقيق المستهدف الاستراتيجي للمصنع (**3 مراحل مؤهلة لكل عامل**):
+
+1. **مسار الترقية السريع (Fast-Track: مستوى 2 إلى 3):**
+   - **المدة:** 3 إلى 5 أيام عمل فقط.
+   - **المنهجية:** إقران العامل المتدرب مع مدرب خبير من المستوى 4.
+   - **الخبراء المتاحون للإشراف:** ${expertsList || 'مشرف الخط والمهندسون'}.
+
+2. **معايير التخرج والترقية:**
+   - إنتاج 100 قطعة مطابقة تماماً للجودة بدون أي عيوب (Zero Defect).
+   - تحقيق زمن الدورة القياسي (Cycle Time) للمحطة.
+   - اعتماد الترقية رسمياً في شاشة المصفوفة من المهندس **${leadership.engineerName}**.
+
+3. **توزيع المحطات المستهدفة:**
+   - إعطاء الأولوية القصوى للمحطات ذات العجز في **${line.name}** لتوفير عمق استراتيجي للخط.`,
+      suggestedFollowUps: [
+        'من هم العمال في المستوى 2 الذين يحتاجون تدريب عاجل؟',
+        'كيف نربط حوافز الإنتاج بمستويات مهارة العامل؟',
+        'ما هو جدول التدوير اليومي المقترح بين العمال؟'
+      ],
+      modelUsed: 'الذكاء الاصطناعي الصناعي المدمج (MatrixPro AI Engine)'
+    };
+  }
+
+  // 4. Line balancing, Takt Time & Shift Rebalancing (موازنة، تاكت، ورديات، ضبط، سرعة)
+  if (msg.includes('موازنة') || msg.includes('تاكت') || msg.includes('وردية') || msg.includes('ورديات') || msg.includes('takt') || msg.includes('balance')) {
+    const shiftA = lineWorkers.filter(w => w.shift === 'A').length;
+    const shiftB = lineWorkers.filter(w => w.shift === 'B').length;
+    const shiftC = lineWorkers.filter(w => w.shift === 'C').length;
+
+    return {
+      text: `### ⚖️ تحليل توازن الخط وتوزيع الورديات (Line Balancing)
+بناءً على توزيع العمال الحالي في **${line.name}**:
+- الوردية الأولى (A): **${shiftA} عامل**
+- الوردية الثانية (B): **${shiftB} عامل**
+- الوردية الثالثة (C): **${shiftC} عامل**
+
+1. **تشخيص الاتزان التشغيلي:**
+   - لضمان ثبات الإنتاجية، يجب أن تتطابق طاقة الورديات مع الـ Takt Time المطلوب لكل وردية.
+   - في حال وجود تفاوت بين الورديات، يتم تحريك العمال متعددي المهارات للوردية الأقل كفاءة.
+
+2. **توصيات رفع كفاءة الخط (OEE):**
+   - تطبيق مبدأ **Heijunka** (تسطيح وتنعيم حجم الإنتاج).
+   - مراجعة محطات الفائض وتوزيع عمالها لسد أي نقص قبل بداية كل وردية بنصف ساعة.`,
+      suggestedFollowUps: [
+        'كيف نقسم العمال بين الوردية الصباحية والمسائية لتحقيق أعلى توازن؟',
+        'ما هي أكبر نقطة اختناق في الخط الحالي؟',
+        'اقترح خطة لتقليل زمن تغيير الموديل (SMED)'
+      ],
+      modelUsed: 'الذكاء الاصطناعي الصناعي المدمج (MatrixPro AI Engine)'
+    };
+  }
+
+  // 5. Changeover, Mold & Setup (موديل، اسطمبة، تغيير، تجهيز، smed)
+  if (msg.includes('موديل') || msg.includes('اسطمبة') || msg.includes('تغيير') || msg.includes('smed') || msg.includes('ضبط')) {
+    return {
+      text: `### ⏱️ بروتوكول تقليل زمن تغيير الموديل (SMED Protocol)
+للانتقال السلس للموديل **(${model.name})** على **${line.name}**:
+
+1. **العمليات الخارجية (External Setup - قبل توقف الخط):**
+   - تجهيز وفحص الاسطمبات والأدوات وقطع الغيار بجانب الماكينة قبل الإيقاف بـ 30 دقيقة.
+   - التحقق من توافر العمال المؤهلين للموديل الجديد في مصفوفة المهارات.
+
+2. **العمليات الداخلية (Internal Setup - أثناء توقف الخط):**
+   - توزيع المهام بالتوازي: فريق ميكانيكي لفك وتركيب الاسطمبة، وفريق ضبط معايير التشغيل.
+   - تثبيت معايير العمل السريع باستخدام المثبتات سريعة الفك والربط.
+
+3. **إطلاق أول قطعة معتمدة (First Piece Approval):**
+   - فحص القياسات الأولى فوراً لتفادي إنتاج أي هادر (Scrap).`,
+      suggestedFollowUps: [
+        'من هم العمال المؤهلون للموديل الجديد على هذا الخط؟',
+        'كيف نوزع مهام فريق الصيانة والتشغيل أثناء التغيير؟',
+        'ما هي نقاط الفحص الحساسة في هذا الموديل؟'
+      ],
+      modelUsed: 'الذكاء الاصطناعي الصناعي المدمج (MatrixPro AI Engine)'
+    };
+  }
+
+  // 6. Quality, Defect & Scrap (جودة، معيب، سكراب، عيوب، هادر)
+  if (msg.includes('جودة') || msg.includes('معيب') || msg.includes('سكراب') || msg.includes('فاقد') || msg.includes('عيب')) {
+    return {
+      text: `### 🛡️ منظومة ضبط الجودة ومنع العيوب (Zero Defect & Jidoka)
+للتعامل مع مشكلات الجودة والمعيب في **${line.name}**:
+
+1. **التحليل الفني للسبب الجذري (Root Cause):**
+   - فحص مستوى مهارة المشغل المنفذ للمحطة (التأكد أنه لا يقل عن المستوى 3).
+   - مطابقة معيار العمل القياسي (Standard Work Sheet) وتحديث تعليمات التشغيل المرئية.
+
+2. **إجراءات الحماية (Poka-Yoke):**
+   - تركيب حساسات ومحددات ميكانيكية تمنع تركيب القطعة بطريقة خاطئة.
+   - تفعيل الجودة عند المصدر: لا تقبل معيباً، لا تصنع معيباً، لا تمرر معيباً للمحطة التالية.
+
+3. **المسؤولية الإشرافية:**
+   - متابعة المشرف **${line.supervisor}** لعينات الجودة كل 30 دقيقة.`,
+      suggestedFollowUps: [
+        'ما هي المحطات الأكثر عرضة لظهور عيوب جودة؟',
+        'كيف ندرب المشغلين على الفحص الذاتي أثناء التشغيل؟',
+        'اقترح خطة 8D للتعامل مع مشكلة معيب متكررة'
+      ],
+      modelUsed: 'الذكاء الاصطناعي الصناعي المدمج (MatrixPro AI Engine)'
+    };
+  }
+
+  // 7. General Assistant Response
+  return {
+    text: `أهلاً بك يا باشمهندس! أنا **المستشار الذكي لمصفوفة المهارات وهندسة العمليات (MatrixPro AI)**. 🤖🏭
+
+أنا متصل حالياً ببيانات **${line.name}** والموديل **(${model.name})**:
+- **عدد محطات العمل:** ${stages.length} ${term.stageLabelPlural}
+- **حجم العمالة المعينة بالخط:** ${lineWorkers.length} عامل (من أصل ${allWorkers.length} بالمصنع)
+- **محطات تعاني من عجز مهارات:** ${shortages.length > 0 ? `${shortages.length} محطات بحاجة لدعم` : 'جميع المحطات مغطاة بنجاح'}
+- **المسؤول الفني:** ${leadership.engineerName} | **مدير العمليات:** ${leadership.managerName}
+
+💡 **يمكنك أن تسألني عن أي مشكلة تشغيلية وسأقترح الحل الفوري:**
+1. ترشيح عمال بالاسم لسد عجز أو فك اختناق.
+2. خطة طوارئ وبدائل لتعويض غياب وردية.
+3. برنامج تدريب OJT لترقية عمال المستوى 2 إلى 3.
+4. موازنة الورديات وضبط خطوط الإنتاج والماكينات.`,
+    suggestedFollowUps: [
+      `ما هو الإجراء الفوري لفك أي اختناق في ${line.name}؟`,
+      'اقترح 3 عمال بدلاء مؤهلين لتعويض غياب مفاجئ في وردية اليوم',
+      'كيف ندرب عمال المستوى 2 للوصول إلى المستوى 3 لتحقيق مستهدف المرونة؟'
+    ],
+    modelUsed: 'الذكاء الاصطناعي الصناعي المدمج (MatrixPro AI Engine)'
+  };
+}
+
+

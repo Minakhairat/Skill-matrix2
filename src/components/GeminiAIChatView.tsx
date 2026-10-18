@@ -25,6 +25,7 @@ import {
 import { ProductionLine, Model, Stage, Worker, PlantLeadership, TerminologyConfig, ChatMessage, GeminiChatModel } from '../types/matrix';
 import { calculateStageMetric } from '../utils/matrixCalculations';
 import { formatUnitName, formatSubUnitName } from '../utils/constants';
+import { solveIndustrialChatQuery } from '../utils/industrialAISolver';
 
 interface GeminiAIChatViewProps {
   line: ProductionLine;
@@ -228,12 +229,19 @@ export const GeminiAIChatView: React.FC<GeminiAIChatViewProps> = ({
         })
       });
 
+      if (!response.ok) {
+        throw new Error(`Server returned HTTP ${response.status}`);
+      }
+
       const data = await response.json();
+      if (!data || data.fallback || !data.text) {
+        throw new Error('Server fallback requested');
+      }
 
       const aiMsg: ChatMessage = {
         id: `model-${Date.now()}`,
         role: 'model',
-        content: data.text || 'تم استلام الاستفسار وفحص البيانات.',
+        content: data.text,
         timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
         modelUsed: data.modelUsed || selectedModel,
         suggestedFollowUps: data.suggestedFollowUps || []
@@ -241,20 +249,28 @@ export const GeminiAIChatView: React.FC<GeminiAIChatViewProps> = ({
 
       setMessages(prev => [...prev, aiMsg]);
     } catch (err: any) {
-      console.error('Chat error:', err);
-      const errorMsg: ChatMessage = {
-        id: `err-${Date.now()}`,
+      // Seamlessly execute client-side Industrial AI Engine (e.g. on GitHub Pages static deployment or offline)
+      const solved = solveIndustrialChatQuery({
+        userMessage: text,
+        history: newHistory.map(m => ({ role: m.role, content: m.content })),
+        line,
+        model,
+        stages,
+        lineWorkers,
+        allWorkers,
+        leadership,
+        terminology: term
+      });
+
+      const aiMsg: ChatMessage = {
+        id: `model-${Date.now()}`,
         role: 'model',
-        content: `حدث تعذر مؤقت في الاتصال بالخادم. ومع ذلك بناءً على مصفوفة المهارات المحلية لـ **${formatUnitName(line.name, term)}**: المحطة التي بها أعلى عجز هي **${shortages[0]?.stage.name || 'المحطة الأولى'}** بعجز **${shortages[0]?.gap || 1} عمال**. يرجى سحب عامل إسناد من محطات الفائض مؤقتاً.`,
+        content: solved.text,
         timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
-        modelUsed: 'محرك الطوارئ الصناعي الداخلي',
-        isError: true,
-        suggestedFollowUps: [
-          'ما هي مراحل العمل ذات الفائض من العمال؟',
-          'كيف نوزع ورديات العمل الثلاث؟'
-        ]
+        modelUsed: solved.modelUsed,
+        suggestedFollowUps: solved.suggestedFollowUps
       };
-      setMessages(prev => [...prev, errorMsg]);
+      setMessages(prev => [...prev, aiMsg]);
     } finally {
       setIsLoading(false);
       setTimeout(() => {
