@@ -186,3 +186,17 @@ export interface ProblemSolutionResult {
   aiExecutiveNote: string;
 }
 
+export type GeminiChatModel = 'gemini-3.8-flash' | 'gemini-3.1-flash-lite' | 'gemini-4-argon';
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  content: string;
+  timestamp: string;
+  modelUsed?: string;
+  suggestedFollowUps?: string[];
+  referencedWorkers?: { name: string; code: string; shift: string; level: number }[];
+  isError?: boolean;
+}
+
+

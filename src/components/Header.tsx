@@ -16,11 +16,12 @@ import {
   Settings2,
   Sparkles,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  MessageSquare
 } from 'lucide-react';
 import { TerminologyConfig } from '../types/matrix';
 
-export type TabType = 'matrix' | 'balancing' | 'ai-advisor' | 'performance' | 'workers' | 'factory' | 'print';
+export type TabType = 'matrix' | 'balancing' | 'ai-chat' | 'ai-advisor' | 'performance' | 'workers' | 'factory' | 'print';
 
 interface HeaderProps {
   activeTab: TabType;
@@ -52,10 +53,11 @@ export const Header: React.FC<HeaderProps> = ({
   const navItems: { id: TabType; label: string; shortLabel: string; icon: React.ElementType; color: string; activeColor: string }[] = [
     { id: 'matrix', label: 'المصفوفة الكاملة', shortLabel: 'المصفوفة', icon: Table2, color: 'text-emerald-600', activeColor: 'bg-emerald-600 text-white' },
     { id: 'balancing', label: 'تحليل الفجوات والموازنة', shortLabel: 'الموازنة والفجوات', icon: BarChart3, color: 'text-sky-600', activeColor: 'bg-sky-600 text-white' },
-    { id: 'ai-advisor', label: 'مستشار الذكاء الاصطناعي', shortLabel: 'المستشار الذكي (AI)', icon: Sparkles, color: 'text-indigo-600', activeColor: 'bg-indigo-600 text-white' },
+    { id: 'ai-chat', label: 'متحدث الذكاء الاصطناعي', shortLabel: 'شات الذكاء الاصطناعي (AI)', icon: MessageSquare, color: 'text-indigo-600', activeColor: 'bg-indigo-600 text-white' },
+    { id: 'ai-advisor', label: 'مستشار الذكاء الاصطناعي', shortLabel: 'المستشار وحلال المشاكل', icon: Sparkles, color: 'text-purple-600', activeColor: 'bg-purple-600 text-white' },
     { id: 'performance', label: 'معدل التحسين والورديات', shortLabel: 'التحسين والورديات', icon: TrendingUp, color: 'text-emerald-600', activeColor: 'bg-emerald-600 text-white' },
-    { id: 'workers', label: `مرونة العمال (3 ${terminology.stageLabelPlural})`, shortLabel: 'مرونة العمال', icon: Users, color: 'text-purple-600', activeColor: 'bg-purple-600 text-white' },
-    { id: 'factory', label: `إعدادات ${terminology.lineLabelPlural} والقيادة`, shortLabel: 'الإعدادات والقيادة', icon: Settings2, color: 'text-violet-600', activeColor: 'bg-violet-600 text-white' },
+    { id: 'workers', label: `مرونة العمال (3 ${terminology.stageLabelPlural})`, shortLabel: 'مرونة العمال', icon: Users, color: 'text-violet-600', activeColor: 'bg-violet-600 text-white' },
+    { id: 'factory', label: `إعدادات ${terminology.lineLabelPlural} والقيادة`, shortLabel: 'الإعدادات والقيادة', icon: Settings2, color: 'text-slate-700', activeColor: 'bg-slate-800 text-white' },
     { id: 'print', label: 'تقرير الورديات', shortLabel: 'طباعة التقرير', icon: Printer, color: 'text-amber-600', activeColor: 'bg-amber-600 text-white' },
   ];
 

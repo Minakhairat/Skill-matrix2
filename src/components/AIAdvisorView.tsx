@@ -25,12 +25,14 @@ import {
   Wrench,
   RotateCcw,
   Sliders,
-  Filter
+  Filter,
+  MessageSquare
 } from 'lucide-react';
 import { Worker, Stage, ProductionLine, Model, PlantLeadership, TerminologyConfig, IndustrialProblemCategory, ProblemSolutionResult } from '../types/matrix';
 import { calculateStageMetric, calculateWorkerFlexibility } from '../utils/matrixCalculations';
 import { generateIndustrialAIAdvice, AIAdviceResponse, solveIndustrialProblem } from '../utils/industrialAISolver';
 import { formatUnitName, formatSubUnitName } from '../utils/constants';
+import { GeminiAIChatView } from './GeminiAIChatView';
 
 interface AIAdvisorViewProps {
   line: ProductionLine;
@@ -41,6 +43,7 @@ interface AIAdvisorViewProps {
   leadership: PlantLeadership;
   terminology?: TerminologyConfig;
   onNavigateToMatrix?: () => void;
+  initialSubTab?: 'chat' | 'problem_solver' | 'general_advice';
 }
 
 export const AIAdvisorView: React.FC<AIAdvisorViewProps> = ({
@@ -51,10 +54,17 @@ export const AIAdvisorView: React.FC<AIAdvisorViewProps> = ({
   allWorkers,
   leadership,
   terminology,
-  onNavigateToMatrix
+  onNavigateToMatrix,
+  initialSubTab = 'chat'
 }) => {
-  // Navigation tabs inside AI Advisor: 'problem_solver' vs 'general_advice'
-  const [activeTab, setActiveTab] = useState<'problem_solver' | 'general_advice'>('problem_solver');
+  // Navigation tabs inside AI Advisor: 'chat' | 'problem_solver' | 'general_advice'
+  const [activeTab, setActiveTab] = useState<'chat' | 'problem_solver' | 'general_advice'>(initialSubTab);
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveTab(initialSubTab);
+    }
+  }, [initialSubTab]);
 
   // PROBLEM SOLVER STATE
   const [selectedCategory, setSelectedCategory] = useState<IndustrialProblemCategory>('bottleneck');
@@ -409,6 +419,18 @@ ${problemResult.aiExecutiveNote}
         {/* Mode Switcher Tabs */}
         <div className="flex items-center gap-1.5 p-1 bg-white/10 rounded-xl shrink-0 self-start md:self-center">
           <button
+            onClick={() => setActiveTab('chat')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              activeTab === 'chat'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-indigo-300" />
+            <span>متحدث الذكاء الاصطناعي (Chat)</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('problem_solver')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
               activeTab === 'problem_solver'
@@ -433,6 +455,22 @@ ${problemResult.aiExecutiveNote}
           </button>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* TAB 0: MULTI-TURN GEMINI AI CHATBOT (متحدث الذكاء الاصطناعي التفاعلي) */}
+      {/* ========================================================================= */}
+      {activeTab === 'chat' && (
+        <GeminiAIChatView
+          line={line}
+          model={model}
+          stages={stages}
+          lineWorkers={lineWorkers}
+          allWorkers={allWorkers}
+          leadership={leadership}
+          terminology={terminology}
+          onNavigateToMatrix={onNavigateToMatrix}
+        />
+      )}
 
       {/* ========================================================================= */}
       {/* TAB 1: DEDICATED INDUSTRIAL PROBLEM SOLVER (حل وتشخيص المشكلات الصناعية) */}

@@ -29,6 +29,8 @@ import { ImportExportModal } from './components/ImportExportModal';
 import { WorkerEditModal } from './components/WorkerEditModal';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
 import { HistoryModal } from './components/HistoryModal';
+import { Bot, MessageSquare } from 'lucide-react';
+import { GeminiAIChatView } from './components/GeminiAIChatView';
 import { Footer } from './components/Footer';
 import { calculateWorkerFlexibility } from './utils/matrixCalculations';
 
@@ -128,6 +130,7 @@ export default function App() {
   const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [selectedWorkerForModal, setSelectedWorkerForModal] = useState<Worker | null>(null);
+  const [isFloatingChatOpen, setIsFloatingChatOpen] = useState(false);
 
   // Persistence to LocalStorage
   useEffect(() => {
@@ -548,6 +551,19 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'ai-chat' && selectedLine && selectedModel && (
+          <GeminiAIChatView
+            line={selectedLine}
+            model={selectedModel}
+            stages={currentStages}
+            lineWorkers={lineWorkers}
+            allWorkers={workers}
+            leadership={leadership}
+            terminology={terminology}
+            onNavigateToMatrix={() => setActiveTab('matrix')}
+          />
+        )}
+
         {activeTab === 'ai-advisor' && selectedLine && selectedModel && (
           <AIAdvisorView
             line={selectedLine}
@@ -687,6 +703,44 @@ export default function App() {
         onClearHistory={handleClearHistory}
         onResetHistory={handleResetHistory}
       />
+
+      {/* Floating Gemini AI Chatbot Trigger (Accessible from all screens) */}
+      <div className="fixed bottom-6 left-6 z-50 flex flex-col items-end gap-3 no-print">
+        {isFloatingChatOpen && selectedLine && selectedModel && (
+          <div className="w-[92vw] sm:w-[480px] shadow-2xl rounded-2xl animate-in fade-in slide-in-from-bottom-5 duration-200">
+            <GeminiAIChatView
+              line={selectedLine}
+              model={selectedModel}
+              stages={currentStages}
+              lineWorkers={lineWorkers}
+              allWorkers={workers}
+              leadership={leadership}
+              terminology={terminology}
+              onNavigateToMatrix={() => {
+                setIsFloatingChatOpen(false);
+                setActiveTab('matrix');
+              }}
+              isFloating={true}
+              onCloseFloating={() => setIsFloatingChatOpen(false)}
+            />
+          </div>
+        )}
+
+        <button
+          onClick={() => setIsFloatingChatOpen(prev => !prev)}
+          className="group flex items-center gap-2.5 bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 text-white px-4 py-3 rounded-full shadow-2xl hover:shadow-indigo-500/30 hover:scale-105 active:scale-95 transition-all border border-indigo-400/40 cursor-pointer"
+          title="فتح متحدث الذكاء الاصطناعي لحل المشكلات"
+        >
+          <div className="relative">
+            <Bot className="w-6 h-6 text-white" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 border-2 border-indigo-700 rounded-full animate-ping" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 border-2 border-indigo-700 rounded-full" />
+          </div>
+          <span className="font-bold text-sm hidden sm:inline">
+            {isFloatingChatOpen ? 'إغلاق المتحدث' : 'متحدث الذكاء الاصطناعي'}
+          </span>
+        </button>
+      </div>
 
       {/* Dedicated Engineering Footer */}
       <Footer />
