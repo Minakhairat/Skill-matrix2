@@ -1,0 +1,6 @@
+{
+  "name": "MatrixPro - سكيل ماتريكس خطوط الإنتاج والعمال",
+  "description": "نظام احترافي لإدارة مصفوفة المهارات (Skills Matrix) لـ 400 عامل، وموازنة خطوط الإنتاج، وتحديد الأهداف وتحليل الفجوات واستيراد وتصدير الإكسيل.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
