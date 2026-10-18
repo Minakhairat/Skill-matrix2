@@ -20,16 +20,12 @@ import {
   Layers,
   AlertTriangle,
   Lightbulb,
-  CheckCircle2,
-  Key,
-  Settings
+  CheckCircle2
 } from 'lucide-react';
 import { ProductionLine, Model, Stage, Worker, PlantLeadership, TerminologyConfig, ChatMessage, GeminiChatModel } from '../types/matrix';
 import { calculateStageMetric } from '../utils/matrixCalculations';
 import { formatUnitName, formatSubUnitName } from '../utils/constants';
 import { solveIndustrialChatQuery } from '../utils/industrialAISolver';
-import { sendChatMessageUnified, getClientGeminiApiKey, isStaticDeployment } from '../utils/geminiService';
-import { GeminiApiKeyModal } from './GeminiApiKeyModal';
 
 interface GeminiAIChatViewProps {
   line: ProductionLine;
@@ -101,8 +97,6 @@ export const GeminiAIChatView: React.FC<GeminiAIChatViewProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
-  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
-  const [hasClientKey, setHasClientKey] = useState<boolean>(() => Boolean(getClientGeminiApiKey()));
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -222,27 +216,40 @@ export const GeminiAIChatView: React.FC<GeminiAIChatViewProps> = ({
     setIsLoading(true);
 
     try {
-      const result = await sendChatMessageUnified({
-        messages: newHistory.map(m => ({
-          role: m.role,
-          content: m.content
-        })),
-        context: buildCurrentContext(),
-        model: selectedModel
+      const response = await fetch('/api/ai-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: newHistory.map(m => ({
+            role: m.role,
+            content: m.content
+          })),
+          context: buildCurrentContext(),
+          model: selectedModel
+        })
       });
+
+      if (!response.ok) {
+        throw new Error(`Server returned HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data || data.fallback || !data.text) {
+        throw new Error('Server fallback requested');
+      }
 
       const aiMsg: ChatMessage = {
         id: `model-${Date.now()}`,
         role: 'model',
-        content: result.text,
+        content: data.text,
         timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }),
-        modelUsed: result.modelUsed || selectedModel,
-        suggestedFollowUps: result.suggestedFollowUps || []
+        modelUsed: data.modelUsed || selectedModel,
+        suggestedFollowUps: data.suggestedFollowUps || []
       };
 
       setMessages(prev => [...prev, aiMsg]);
     } catch (err: any) {
-      // Execute client-side Industrial AI Engine (when running without key or offline)
+      // Seamlessly execute client-side Industrial AI Engine (e.g. on GitHub Pages static deployment or offline)
       const solved = solveIndustrialChatQuery({
         userMessage: text,
         history: newHistory.map(m => ({ role: m.role, content: m.content })),
@@ -480,20 +487,6 @@ export const GeminiAIChatView: React.FC<GeminiAIChatViewProps> = ({
             </button>
           </div>
 
-          {/* Gemini API Key & Connection Status Button */}
-          <button
-            onClick={() => setIsApiKeyModalOpen(true)}
-            className={`px-2.5 py-1 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all ${
-              hasClientKey
-                ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30'
-                : 'bg-amber-500/20 border-amber-400/40 text-amber-300 hover:bg-amber-500/30'
-            }`}
-            title="إعدادات اتصال Google Gemini AI لنسخة GitHub Pages"
-          >
-            <Key className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{hasClientKey ? 'Gemini مفعل' : 'تفعيل Gemini'}</span>
-          </button>
-
           <button
             onClick={handleExportChat}
             className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition border border-slate-700"
@@ -521,25 +514,6 @@ export const GeminiAIChatView: React.FC<GeminiAIChatViewProps> = ({
           )}
         </div>
       </div>
-
-      {/* Banner for GitHub Pages without custom key */}
-      {!hasClientKey && isStaticDeployment() && (
-        <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border-b border-amber-200 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-950">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-            <span>
-              أنت على <strong>GitHub Pages</strong>. يعمل النظام حالياً بـ <strong>MatrixPro AI Engine المدمج</strong>.
-            </span>
-          </div>
-          <button
-            onClick={() => setIsApiKeyModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs transition-colors shadow-2xs mr-auto"
-          >
-            <Key className="w-3.5 h-3.5 text-amber-300" />
-            <span>تشغيل Google Gemini الحقيقي</span>
-          </button>
-        </div>
-      )}
 
       {/* Quick Prompts Bar */}
       <div className="bg-indigo-50/70 border-b border-indigo-100 px-4 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
@@ -746,13 +720,6 @@ export const GeminiAIChatView: React.FC<GeminiAIChatViewProps> = ({
           )}
         </div>
       </div>
-
-      {/* Gemini API Key Modal for GitHub Pages */}
-      <GeminiApiKeyModal
-        isOpen={isApiKeyModalOpen}
-        onClose={() => setIsApiKeyModalOpen(false)}
-        onKeyUpdated={() => setHasClientKey(Boolean(getClientGeminiApiKey()))}
-      />
     </div>
   );
 };
