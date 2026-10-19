@@ -161,6 +161,91 @@ export default function App() {
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [cloudSyncSuccessMsg, setCloudSyncSuccessMsg] = useState<string | null>(null);
 
+  // Helper to load full cloud dataset for user
+  const loadCloudDataForUser = useCallback(async (user: AppUser) => {
+    setIsCloudSyncing(true);
+    try {
+      const dataset = await fetchFullDatasetFromFirestore();
+      if (dataset.hasData && dataset.lines.length > 0) {
+        setLines(dataset.lines);
+        setWorkers(dataset.workers);
+        if (dataset.settings) {
+          if (dataset.settings.targetWorkersPerStage) setTargetWorkersPerStage(dataset.settings.targetWorkersPerStage);
+          if (dataset.settings.targetStagesPerWorker) setTargetStagesPerWorker(dataset.settings.targetStagesPerWorker);
+          if (dataset.settings.minQualifiedLevel) setMinQualifiedLevel(dataset.settings.minQualifiedLevel);
+        }
+        if (dataset.terminology) setTerminology(dataset.terminology);
+        if (dataset.leadership) setLeadership(dataset.leadership);
+
+        // Supervisor line selection
+        const userAssigned = dataset.lines.filter(l => 
+          (l.supervisorEmail || '').toLowerCase().trim() === user.email.toLowerCase().trim() ||
+          user.assignedLineIds.includes(l.id)
+        ).map(l => l.id);
+
+        if (user.role === 'supervisor') {
+          if (userAssigned.length > 0) {
+            setSelectedLineId(userAssigned[0]);
+            const targetLine = dataset.lines.find(l => l.id === userAssigned[0]);
+            if (targetLine && targetLine.models.length > 0) {
+              setSelectedModelId(targetLine.models[0].id);
+            }
+          }
+        } else if (dataset.lines.length > 0) {
+          setSelectedLineId(dataset.lines[0].id);
+          if (dataset.lines[0].models.length > 0) {
+            setSelectedModelId(dataset.lines[0].models[0].id);
+          }
+        }
+
+        setCloudSyncSuccessMsg(`تم استرجاع ومزامنة البيانات السحابية بنجاح (${dataset.workers.length} عامل و ${dataset.lines.length} خطوط) ✓`);
+        setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
+      } else {
+        // Cloud is empty, initialize default if user is admin
+        if (user.role === 'admin') {
+          const freshLines = generateInitialLines();
+          const freshWorkers = generate400Workers(freshLines);
+          setLines(freshLines);
+          setWorkers(freshWorkers);
+          setSelectedLineId(freshLines[0].id);
+          setSelectedModelId(freshLines[0].models[0].id);
+        }
+      }
+    } catch (e: any) {
+      console.warn('Error loading cloud data for user:', e);
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  }, []);
+
+  // Complete Signout Handler: wipes all browser storage & state clean
+  const handleSignOutUser = async () => {
+    try {
+      await logoutUser();
+    } catch (e) {
+      console.warn('Error during firebase signout:', e);
+    }
+    // 1. Wipe auth user
+    setCurrentUser(null);
+    // 2. Wipe browser local storage completely
+    try {
+      localStorage.removeItem('matrixpro_current_user');
+      localStorage.removeItem(STORAGE_KEY_WORKERS);
+      localStorage.removeItem(STORAGE_KEY_LINES);
+      localStorage.removeItem(STORAGE_KEY_SETTINGS);
+      localStorage.removeItem(STORAGE_KEY_HISTORY);
+    } catch (e) {}
+
+    // 3. Reset React state to empty/clean slate
+    setWorkers([]);
+    setLines([]);
+    setLogs([]);
+    setSelectedLineId('');
+    setSelectedModelId('');
+    setCloudSyncSuccessMsg('تم تسجيل الخروج وتفريغ كافة بيانات المتصفح بنجاح لضمان الأمان.');
+    setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
+  };
+
   // Initial Firestore Connection Test & Auth Observer
   useEffect(() => {
     testConnection();
@@ -171,10 +256,11 @@ export default function App() {
         try {
           localStorage.setItem('matrixpro_current_user', JSON.stringify(resolved));
         } catch (e) {}
+        await loadCloudDataForUser(resolved);
       }
     });
     return () => unsubAuth();
-  }, [lines]);
+  }, [loadCloudDataForUser]);
 
   // Real-time synchronization when user is authenticated
   useEffect(() => {
@@ -186,9 +272,8 @@ export default function App() {
         }
       },
       onWorkersUpdate: (cloudWorkers) => {
-        if (cloudWorkers && cloudWorkers.length > 0) {
-          setWorkers(cloudWorkers);
-        }
+        // Always reflect workers update (including empty if deleted from online database)
+        setWorkers(cloudWorkers || []);
       },
       onError: (err) => {
         console.warn('Realtime sync status:', err);
@@ -204,7 +289,7 @@ export default function App() {
         setSelectedLineId(currentUser.assignedLineIds[0]);
       }
     }
-  }, [currentUser]);
+  }, [currentUser, selectedLineId]);
 
   // Persistence to LocalStorage
   useEffect(() => {
@@ -436,14 +521,14 @@ export default function App() {
     }
   };
 
-  const handleDeleteWorker = (workerId: string) => {
+  const handleDeleteWorker = async (workerId: string) => {
     const targetWorker = workers.find(w => w.id === workerId);
     setWorkers(prev => prev.filter(w => w.id !== workerId));
     if (targetWorker) {
       logAction(
         'worker_deleted',
         `حذف العامل ${targetWorker.name}`,
-        `تم حذف العامل ${targetWorker.name} (${targetWorker.empCode}) وكافة تقييماته نهائياً من النظام.`
+        `تم حذف العامل ${targetWorker.name} (${targetWorker.empCode}) وكافة تقييماته نهائياً من النظام وقاعدة البيانات السحابية.`
       );
     }
     setWorkerToDelete(null);
@@ -452,16 +537,71 @@ export default function App() {
     }
 
     if (currentUser) {
-      deleteWorkerFromFirestore(workerId).catch(err => console.warn('Could not delete worker from Firestore:', err));
+      try {
+        await deleteWorkerFromFirestore(workerId);
+        setCloudSyncSuccessMsg(`تم حذف العامل (${targetWorker?.name || workerId}) بنجاح من قاعدة البيانات السحابية (Firestore) ✓`);
+        setTimeout(() => setCloudSyncSuccessMsg(null), 3000);
+      } catch (err: any) {
+        console.warn('Could not delete worker from Firestore:', err);
+      }
     }
   };
 
-  const handleClearAllData = () => {
+  const handleClearAllData = async () => {
+    const countBefore = workers.length;
     setWorkers([]);
     logAction(
       'all_cleared',
       'مسح شامل لكافة بيانات العمال',
-      'تم مسح كافة سجلات العمال ومصفوفة المهارات بالكامل من المتصفح.'
+      'تم مسح كافة سجلات العمال ومصفوفة المهارات بالكامل من المتصفح وقاعدة البيانات السحابية.'
+    );
+
+    if (currentUser) {
+      try {
+        const targetLineId = currentUser.role === 'supervisor' ? selectedLineId : undefined;
+        const deletedCount = await clearAllWorkersFromFirestore(targetLineId);
+        setCloudSyncSuccessMsg(`تم حذف ${deletedCount ?? countBefore} عامل نهائياً من قاعدة بيانات Firestore أونلاين ✓`);
+        setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
+      } catch (err: any) {
+        console.error('Failed to clear workers from Firestore:', err);
+        alert('تعذر مسح البيانات من السحابة: ' + (err?.message || ''));
+      }
+    }
+  };
+
+  const handleSaveSupervisorEmail = async (lineId: string, supervisorName: string, supervisorEmail: string) => {
+    const lineObj = lines.find(l => l.id === lineId);
+    const normalizedEmail = (supervisorEmail || '').toLowerCase().trim();
+    const updatedLine: ProductionLine = lineObj ? {
+      ...lineObj,
+      supervisor: supervisorName.trim() || lineObj.supervisor,
+      supervisorEmail: normalizedEmail
+    } : {
+      id: lineId,
+      name: lineId,
+      nameEn: lineId,
+      code: lineId,
+      supervisor: supervisorName.trim(),
+      supervisorEmail: normalizedEmail,
+      models: []
+    };
+
+    setLines(prev => prev.map(l => l.id === lineId ? updatedLine : l));
+
+    if (currentUser) {
+      try {
+        await saveSupervisorEmailToFirestore(updatedLine, supervisorName, normalizedEmail);
+        setCloudSyncSuccessMsg(`تم اعتماد وحفظ إيميل المشرف (${normalizedEmail || 'بدون إيميل'}) للـ ${updatedLine.name} في السحابة بنجاح ✓`);
+        setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
+      } catch (e: any) {
+        console.warn('Failed to save supervisor email:', e);
+      }
+    }
+
+    logAction(
+      'target_changed',
+      `اعتماد إيميل المشرف لـ ${updatedLine.name}`,
+      `تم اعتماد المشرف ${supervisorName || updatedLine.supervisor} بحساب البريد (${normalizedEmail || 'بدون بريد'}) وحفظه في السحابة بنجاح.`
     );
   };
 
@@ -744,126 +884,165 @@ export default function App() {
           qualifiedWorkersMeetingTarget={qualifiedWorkersMeetingTarget}
           terminology={terminology}
           currentUser={currentUser}
+          onSaveSupervisorEmail={handleSaveSupervisorEmail}
         />
       )}
 
       {/* Main Content Viewport */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-6 lg:p-8 flex flex-col">
-        {activeTab === 'matrix' && (
-          <div className="flex-1 flex flex-col min-h-[500px]">
-            <SkillsMatrixGrid
+      {lines.length === 0 ? (
+        <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-8 flex flex-col items-center justify-center text-center my-auto">
+          <div className="bg-white p-6 sm:p-10 rounded-3xl border border-slate-200 shadow-xl space-y-5 max-w-xl w-full animate-in fade-in zoom-in-95">
+            <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+              <Cloud className="w-7 h-7" />
+            </div>
+            <div>
+              <h2 className="text-lg sm:text-xl font-bold text-slate-900">
+                تم تسجيل الخروج وتفريغ ذاكرة المتصفح
+              </h2>
+              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                تم مسح وتفريغ كافة البيانات من المتصفح بالكامل لضمان الأمان والخصوصية. سجل دخولك كـ <strong>مدير النظام (Admin)</strong> أو <strong>مشرف خط</strong> لاسترجاع بيانات المصنع والعمال أونلاين فوراً من سحابة Firestore.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsAuthModalOpen(true)}
+                className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs sm:text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <Cloud className="w-4 h-4" />
+                <span>تسجيل الدخول (Google Gmail) واسترجاع البيانات</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleReset400Workers}
+                className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs sm:text-sm transition-all cursor-pointer"
+              >
+                بدء العمل ببيانات تجريبية (400 عامل)
+              </button>
+            </div>
+          </div>
+        </main>
+      ) : (
+        <main className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-6 lg:p-8 flex flex-col">
+          {activeTab === 'matrix' && (
+            <div className="flex-1 flex flex-col min-h-[500px]">
+              <SkillsMatrixGrid
+                workers={filteredLineWorkers}
+                stages={currentStages}
+                readOnly={!isCurrentLinePermitted}
+                onUpdateWorkerSkill={handleUpdateWorkerSkill}
+                onSelectWorkerDetails={(worker) => setSelectedWorkerForModal(worker)}
+                onEditWorker={(worker) => {
+                  setWorkerToEdit(worker);
+                  setIsWorkerEditOpen(true);
+                }}
+                onDeleteWorker={(worker) => setWorkerToDelete(worker)}
+                terminology={terminology}
+              />
+            </div>
+          )}
+
+          {activeTab === 'balancing' && selectedLine && (
+            <GapAnalysisDashboard
+              stages={currentStages}
+              lineWorkers={lineWorkers}
+              allWorkers={workers}
+              lineName={selectedLine.name}
+              currentLineId={selectedLine.id}
+              onUpdateWorkerSkill={handleUpdateWorkerSkill}
+              onTransferWorkerLine={handleTransferWorkerLine}
+              terminology={terminology}
+            />
+          )}
+
+          {activeTab === 'ai-chat' && selectedLine && selectedModel && (
+            <GeminiAIChatView
+              line={selectedLine}
+              model={selectedModel}
+              stages={currentStages}
+              lineWorkers={lineWorkers}
+              allWorkers={workers}
+              leadership={leadership}
+              terminology={terminology}
+              onNavigateToMatrix={() => setActiveTab('matrix')}
+            />
+          )}
+
+          {activeTab === 'ai-advisor' && selectedLine && selectedModel && (
+            <AIAdvisorView
+              line={selectedLine}
+              model={selectedModel}
+              stages={currentStages}
+              lineWorkers={lineWorkers}
+              allWorkers={workers}
+              leadership={leadership}
+              terminology={terminology}
+              onNavigateToMatrix={() => setActiveTab('matrix')}
+            />
+          )}
+
+          {activeTab === 'performance' && selectedLine && selectedModel && (
+            <ShiftPerformanceView
+              line={selectedLine}
+              model={selectedModel}
+              stages={currentStages}
+              lineWorkers={lineWorkers}
+              onOpenWorkerModal={(worker) => setSelectedWorkerForModal(worker)}
+              terminology={terminology}
+            />
+          )}
+
+          {activeTab === 'workers' && (
+            <WorkerProfilesView
               workers={filteredLineWorkers}
               stages={currentStages}
-              readOnly={!isCurrentLinePermitted}
               onUpdateWorkerSkill={handleUpdateWorkerSkill}
-              onSelectWorkerDetails={(worker) => setSelectedWorkerForModal(worker)}
+              selectedWorkerForModal={selectedWorkerForModal}
+              onOpenWorkerModal={(worker) => setSelectedWorkerForModal(worker)}
+              onCloseWorkerModal={() => setSelectedWorkerForModal(null)}
               onEditWorker={(worker) => {
                 setWorkerToEdit(worker);
                 setIsWorkerEditOpen(true);
               }}
               onDeleteWorker={(worker) => setWorkerToDelete(worker)}
               terminology={terminology}
+              readOnly={!isCurrentLinePermitted}
             />
-          </div>
-        )}
+          )}
 
-        {activeTab === 'balancing' && selectedLine && (
-          <GapAnalysisDashboard
-            stages={currentStages}
-            lineWorkers={lineWorkers}
-            allWorkers={workers}
-            lineName={selectedLine.name}
-            currentLineId={selectedLine.id}
-            onUpdateWorkerSkill={handleUpdateWorkerSkill}
-            onTransferWorkerLine={handleTransferWorkerLine}
-            terminology={terminology}
-          />
-        )}
+          {activeTab === 'factory' && (
+            <FactorySetupView
+              lines={lines}
+              onUpdateLines={handleUpdateLines}
+              terminology={terminology}
+              onUpdateTerminology={handleUpdateTerminology}
+              targetWorkersPerStage={targetWorkersPerStage}
+              onUpdateTargetWorkersPerStage={setTargetWorkersPerStage}
+              targetStagesPerWorker={targetStagesPerWorker}
+              onUpdateTargetStagesPerWorker={setTargetStagesPerWorker}
+              minQualifiedLevel={minQualifiedLevel}
+              onUpdateMinQualifiedLevel={setMinQualifiedLevel}
+              leadership={leadership}
+              onUpdateLeadership={setLeadership}
+              currentUser={currentUser}
+              onSaveSupervisorEmail={handleSaveSupervisorEmail}
+            />
+          )}
 
-        {activeTab === 'ai-chat' && selectedLine && selectedModel && (
-          <GeminiAIChatView
-            line={selectedLine}
-            model={selectedModel}
-            stages={currentStages}
-            lineWorkers={lineWorkers}
-            allWorkers={workers}
-            leadership={leadership}
-            terminology={terminology}
-            onNavigateToMatrix={() => setActiveTab('matrix')}
-          />
-        )}
-
-        {activeTab === 'ai-advisor' && selectedLine && selectedModel && (
-          <AIAdvisorView
-            line={selectedLine}
-            model={selectedModel}
-            stages={currentStages}
-            lineWorkers={lineWorkers}
-            allWorkers={workers}
-            leadership={leadership}
-            terminology={terminology}
-            onNavigateToMatrix={() => setActiveTab('matrix')}
-          />
-        )}
-
-        {activeTab === 'performance' && selectedLine && selectedModel && (
-          <ShiftPerformanceView
-            line={selectedLine}
-            model={selectedModel}
-            stages={currentStages}
-            lineWorkers={lineWorkers}
-            onOpenWorkerModal={(worker) => setSelectedWorkerForModal(worker)}
-            terminology={terminology}
-          />
-        )}
-
-        {activeTab === 'workers' && (
-          <WorkerProfilesView
-            workers={filteredLineWorkers}
-            stages={currentStages}
-            onUpdateWorkerSkill={handleUpdateWorkerSkill}
-            selectedWorkerForModal={selectedWorkerForModal}
-            onOpenWorkerModal={(worker) => setSelectedWorkerForModal(worker)}
-            onCloseWorkerModal={() => setSelectedWorkerForModal(null)}
-            onEditWorker={(worker) => {
-              setWorkerToEdit(worker);
-              setIsWorkerEditOpen(true);
-            }}
-            onDeleteWorker={(worker) => setWorkerToDelete(worker)}
-            terminology={terminology}
-            readOnly={!isCurrentLinePermitted}
-          />
-        )}
-
-        {activeTab === 'factory' && (
-          <FactorySetupView
-            lines={lines}
-            onUpdateLines={handleUpdateLines}
-            terminology={terminology}
-            onUpdateTerminology={handleUpdateTerminology}
-            targetWorkersPerStage={targetWorkersPerStage}
-            onUpdateTargetWorkersPerStage={setTargetWorkersPerStage}
-            targetStagesPerWorker={targetStagesPerWorker}
-            onUpdateTargetStagesPerWorker={setTargetStagesPerWorker}
-            minQualifiedLevel={minQualifiedLevel}
-            onUpdateMinQualifiedLevel={setMinQualifiedLevel}
-            leadership={leadership}
-            onUpdateLeadership={setLeadership}
-            currentUser={currentUser}
-          />
-        )}
-
-        {activeTab === 'print' && selectedLine && selectedModel && (
-          <PrintReportView
-            line={selectedLine}
-            model={selectedModel}
-            stages={currentStages}
-            workers={lineWorkers}
-            leadership={leadership}
-            terminology={terminology}
-          />
-        )}
-      </main>
+          {activeTab === 'print' && selectedLine && selectedModel && (
+            <PrintReportView
+              line={selectedLine}
+              model={selectedModel}
+              stages={currentStages}
+              workers={lineWorkers}
+              leadership={leadership}
+              terminology={terminology}
+            />
+          )}
+        </main>
+      )}
 
       {/* Modals & Dialogs */}
       <TargetSettingsModal
@@ -944,19 +1123,21 @@ export default function App() {
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         currentUser={currentUser}
-        onUserChange={(user) => {
+        onUserChange={async (user) => {
           setCurrentUser(user);
           try {
             if (user) {
               localStorage.setItem('matrixpro_current_user', JSON.stringify(user));
+              await loadCloudDataForUser(user);
             } else {
-              localStorage.removeItem('matrixpro_current_user');
+              await handleSignOutUser();
             }
           } catch (e) {}
         }}
         lines={lines}
         onSyncAllToCloud={handlePushFullDataToCloud}
         isSyncing={isCloudSyncing}
+        onSignOut={handleSignOutUser}
       />
 
       {/* Floating Gemini AI Chatbot Trigger (Accessible from all screens) */}

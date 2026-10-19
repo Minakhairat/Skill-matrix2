@@ -19,6 +19,7 @@ interface LineModelBarProps {
   qualifiedWorkersMeetingTarget: number;
   terminology: TerminologyConfig;
   currentUser?: AppUser | null;
+  onSaveSupervisorEmail?: (lineId: string, supervisorName: string, supervisorEmail: string) => Promise<void>;
 }
 
 export const LineModelBar: React.FC<LineModelBarProps> = ({
@@ -36,9 +37,15 @@ export const LineModelBar: React.FC<LineModelBarProps> = ({
   targetWorkersPerStage,
   qualifiedWorkersMeetingTarget,
   terminology,
-  currentUser
+  currentUser,
+  onSaveSupervisorEmail
 }) => {
   const [isFiltersExpandedOnMobile, setIsFiltersExpandedOnMobile] = useState(false);
+  const [isSupervisorModalOpen, setIsSupervisorModalOpen] = useState(false);
+  const [supervisorNameInput, setSupervisorNameInput] = useState(selectedLine?.supervisor || '');
+  const [supervisorEmailInput, setSupervisorEmailInput] = useState(selectedLine?.supervisorEmail || '');
+  const [isSavingSupervisor, setIsSavingSupervisor] = useState(false);
+  const [supervisorSaveFeedback, setSupervisorSaveFeedback] = useState<string | null>(null);
 
   const UnitIcon = terminology.preset === 'machines_molds' ? Cog : terminology.preset === 'departments_products' ? Building2 : Factory;
 
@@ -48,6 +55,39 @@ export const LineModelBar: React.FC<LineModelBarProps> = ({
     currentUser.assignedLineIds.includes(selectedLine?.id) ||
     (selectedLine?.supervisorEmail && selectedLine.supervisorEmail.toLowerCase().trim() === currentUser.email.toLowerCase().trim())
   );
+
+  const handleOpenSupervisorModal = () => {
+    setSupervisorNameInput(selectedLine?.supervisor || '');
+    setSupervisorEmailInput(selectedLine?.supervisorEmail || '');
+    setSupervisorSaveFeedback(null);
+    setIsSupervisorModalOpen(true);
+  };
+
+  const handleConfirmSupervisorEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLine) return;
+    try {
+      setIsSavingSupervisor(true);
+      setSupervisorSaveFeedback(null);
+      if (onSaveSupervisorEmail) {
+        await onSaveSupervisorEmail(
+          selectedLine.id, 
+          supervisorNameInput.trim() || selectedLine.supervisor, 
+          supervisorEmailInput.trim().toLowerCase()
+        );
+      }
+      setSupervisorSaveFeedback('تم اعتماد وتأكيد إيميل المشرف في السحابة بنجاح ✓');
+      setTimeout(() => {
+        setIsSupervisorModalOpen(false);
+        setSupervisorSaveFeedback(null);
+      }, 1500);
+    } catch (err: any) {
+      console.error('Error saving supervisor email:', err);
+      setSupervisorSaveFeedback('حدث خطأ أثناء الحفظ: ' + (err?.message || ''));
+    } finally {
+      setIsSavingSupervisor(false);
+    }
+  };
 
   return (
     <div className="bg-white border-b border-slate-200 py-2 sm:py-2.5 px-2.5 sm:px-6 lg:px-8 no-print">
@@ -191,18 +231,121 @@ export const LineModelBar: React.FC<LineModelBarProps> = ({
                 </span>
               )
             ) : (
-              <span className="text-[11px] text-slate-500 flex items-center gap-1">
-                <span>المشرف:</span>
-                <strong className="text-slate-800">{selectedLine?.supervisor || 'غير محدد'}</strong>
-                {selectedLine?.supervisorEmail && (
-                  <span className="font-mono text-[10px] text-slate-400">({selectedLine.supervisorEmail})</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                  <span>المشرف:</span>
+                  <strong className="text-slate-800">{selectedLine?.supervisor || 'غير محدد'}</strong>
+                  {selectedLine?.supervisorEmail && (
+                    <span className="font-mono text-[10px] text-slate-400">({selectedLine.supervisorEmail})</span>
+                  )}
+                </span>
+
+                {/* Dedicated button to confirm / edit supervisor email for Admin */}
+                {currentUser?.role === 'admin' && (
+                  <button
+                    type="button"
+                    onClick={handleOpenSupervisorModal}
+                    className="flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                    title="تأكيد وتسجيل إيميل المشرف الخاص بهذا الخط"
+                  >
+                    <ShieldCheck className="w-3 h-3 text-indigo-600" />
+                    <span>تأكيد إيميل المشرف</span>
+                  </button>
                 )}
-              </span>
+              </div>
             )}
           </div>
         </div>
 
       </div>
+
+      {/* Admin Quick Supervisor Email Confirmation Modal */}
+      {isSupervisorModalOpen && selectedLine && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 space-y-4 text-right">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-indigo-50 text-indigo-700 rounded-lg">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    تأكيد وتسجيل إيميل المشرف: {selectedLine.name}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    منح المشرف الصلاحية السحابية لإدارة وتعديل عمال هذا الخط
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSupervisorModalOpen(false)}
+                className="text-slate-400 hover:text-slate-700 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {supervisorSaveFeedback && (
+              <div className="p-2.5 bg-emerald-50 border border-emerald-300 text-emerald-900 rounded-xl text-xs font-bold flex items-center gap-1.5">
+                <span>{supervisorSaveFeedback}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmSupervisorEmail} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  اسم المشرف المسؤول:
+                </label>
+                <input
+                  type="text"
+                  value={supervisorNameInput}
+                  onChange={(e) => setSupervisorNameInput(e.target.value)}
+                  placeholder="مثال: أ. محمد إبراهيم"
+                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  البريد الإلكتروني للمشرف (Google Gmail):
+                </label>
+                <input
+                  type="email"
+                  value={supervisorEmailInput}
+                  onChange={(e) => setSupervisorEmailInput(e.target.value)}
+                  placeholder="supervisor@gmail.com"
+                  className="w-full px-3 py-2 text-xs font-mono bg-slate-50 border border-slate-300 rounded-lg text-slate-900 focus:bg-white focus:ring-2 focus:ring-indigo-500 dir-ltr text-right"
+                  required
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  * عندما يقوم المشرف بتسجيل الدخول بهذا البريد سيتم منحه التحكم الكامل في هذا الخط تلقائياً.
+                </p>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsSupervisorModalOpen(false)}
+                  disabled={isSavingSupervisor}
+                  className="px-3 py-1.5 text-xs text-slate-600 hover:text-slate-800"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingSupervisor}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>{isSavingSupervisor ? 'جارٍ التأكيد والحفظ...' : 'تأكيد وتسجيل إيميل المشرف في السحابة'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

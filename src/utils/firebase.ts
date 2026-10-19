@@ -374,29 +374,43 @@ export async function fetchFullDatasetFromFirestore(): Promise<{
 
 // Dedicated function to confirm and save supervisor email to Firestore
 export async function saveSupervisorEmailToFirestore(
-  lineId: string, 
+  lineOrId: string | ProductionLine, 
   supervisorName: string, 
   supervisorEmail: string
 ): Promise<void> {
+  const lineId = typeof lineOrId === 'string' ? lineOrId : lineOrId.id;
+  const lineObj = typeof lineOrId === 'object' ? lineOrId : null;
   const normalizedEmail = (supervisorEmail || '').toLowerCase().trim();
   const path = `lines/${lineId}`;
 
+  const payload: any = {
+    id: lineId,
+    name: lineObj?.name || lineId,
+    code: lineObj?.code || lineId,
+    supervisor: supervisorName.trim(),
+    supervisorName: supervisorName.trim(),
+    supervisorEmail: normalizedEmail,
+    shiftCount: 3,
+    models: lineObj?.models || [],
+    updatedAt: new Date().toISOString(),
+    updatedBy: auth.currentUser?.email || 'admin'
+  };
+
+  if (lineObj?.nameEn) {
+    payload.nameEn = lineObj.nameEn;
+  }
+
   try {
-    await setDoc(doc(db, 'lines', lineId), {
-      supervisorName: supervisorName.trim(),
-      supervisorEmail: normalizedEmail,
-      updatedAt: new Date().toISOString(),
-      updatedBy: auth.currentUser?.email || 'admin'
-    }, { merge: true });
+    await setDoc(doc(db, 'lines', lineId), payload, { merge: true });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
+    handleFirestoreError(error, OperationType.WRITE, path);
   }
 
   // Update or link the user in users collection if exists
   if (normalizedEmail) {
     try {
       const usersSnap = await getDocs(query(collection(db, 'users'), where('email', '==', normalizedEmail)));
-      usersSnap.forEach(async (uDoc) => {
+      for (const uDoc of usersSnap.docs) {
         const uData = uDoc.data();
         const existingLines: string[] = Array.isArray(uData.assignedLineIds) ? uData.assignedLineIds : [];
         if (!existingLines.includes(lineId)) {
@@ -405,7 +419,7 @@ export async function saveSupervisorEmailToFirestore(
             updatedAt: new Date().toISOString()
           }, { merge: true });
         }
-      });
+      }
     } catch (e) {
       console.warn('Could not link supervisor user doc:', e);
     }
