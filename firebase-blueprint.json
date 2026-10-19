@@ -1,0 +1,288 @@
+{
+  "entities": {
+    "Admin": {
+      "title": "Admin",
+      "description": "System administrator document authorizing full system control",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth user UID",
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "description": "Administrator email address",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp",
+          "maxLength": 64
+        }
+      },
+      "required": ["uid", "email"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with role and assigned production lines",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth user UID",
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address",
+          "maxLength": 128
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name",
+          "maxLength": 128
+        },
+        "role": {
+          "type": "string",
+          "description": "Role of the user",
+          "enum": ["admin", "supervisor"]
+        },
+        "assignedLineIds": {
+          "type": "array",
+          "description": "Array of line IDs assigned to this supervisor"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last update timestamp",
+          "maxLength": 64
+        }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "ProductionLine": {
+      "title": "ProductionLine",
+      "description": "Production line or department entity with assigned supervisor",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Line identifier",
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "description": "Line name",
+          "maxLength": 128
+        },
+        "supervisorEmail": {
+          "type": "string",
+          "description": "Supervisor Google email address",
+          "maxLength": 128
+        },
+        "supervisorName": {
+          "type": "string",
+          "description": "Supervisor display name",
+          "maxLength": 128
+        },
+        "shiftCount": {
+          "type": "number",
+          "description": "Number of shifts operating on this line"
+        },
+        "models": {
+          "type": "array",
+          "description": "Array of production models and their stages"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last update timestamp",
+          "maxLength": 64
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "Email or UID of user who last modified the line",
+          "maxLength": 128
+        }
+      },
+      "required": ["id", "name"]
+    },
+    "Worker": {
+      "title": "Worker",
+      "description": "Factory worker with skill matrix and shift assignment",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Worker identifier",
+          "maxLength": 64
+        },
+        "code": {
+          "type": "string",
+          "description": "Worker badge code",
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "description": "Worker full name",
+          "maxLength": 128
+        },
+        "department": {
+          "type": "string",
+          "description": "Department or section name",
+          "maxLength": 128
+        },
+        "lineId": {
+          "type": "string",
+          "description": "Production line ID the worker belongs to",
+          "maxLength": 64
+        },
+        "shift": {
+          "type": "string",
+          "description": "Assigned shift",
+          "maxLength": 32
+        },
+        "skills": {
+          "type": "object",
+          "description": "Skills dictionary mapping stage ID to skill level"
+        },
+        "performanceRate": {
+          "type": "number",
+          "description": "Worker performance efficiency rate percentage"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Operational notes on worker",
+          "maxLength": 500
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Last update timestamp",
+          "maxLength": 64
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "User who updated the record",
+          "maxLength": 128
+        }
+      },
+      "required": ["id", "code", "name", "lineId"]
+    },
+    "PlantSettings": {
+      "title": "PlantSettings",
+      "description": "Global plant balancing targets and terminology configuration",
+      "type": "object",
+      "properties": {
+        "targetWorkersPerStage": {
+          "type": "number",
+          "description": "Target number of qualified workers per workstation"
+        },
+        "targetStagesPerWorker": {
+          "type": "number",
+          "description": "Target number of qualified stations per worker"
+        },
+        "minQualifiedLevel": {
+          "type": "number",
+          "description": "Minimum level required to be considered qualified"
+        },
+        "terminology": {
+          "type": "object",
+          "description": "Custom plant terminology labels"
+        },
+        "leadership": {
+          "type": "object",
+          "description": "Plant leadership roles and names"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp of settings update",
+          "maxLength": 64
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "Admin email who updated the settings",
+          "maxLength": 128
+        }
+      },
+      "required": ["targetWorkersPerStage", "targetStagesPerWorker"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Historical audit trail of actions taken in the plant",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Log entry identifier",
+          "maxLength": 128
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Log timestamp",
+          "maxLength": 64
+        },
+        "actionType": {
+          "type": "string",
+          "description": "Category of action",
+          "maxLength": 64
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of action",
+          "maxLength": 200
+        },
+        "details": {
+          "type": "string",
+          "description": "Full details of action",
+          "maxLength": 1000
+        },
+        "badgeLabel": {
+          "type": "string",
+          "description": "Badge display text",
+          "maxLength": 64
+        },
+        "badgeClass": {
+          "type": "string",
+          "description": "Badge CSS class",
+          "maxLength": 128
+        },
+        "actorEmail": {
+          "type": "string",
+          "description": "Email of actor who executed the change",
+          "maxLength": 128
+        }
+      },
+      "required": ["id", "timestamp", "actionType", "title"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "List of system administrators authorized to manage all lines and users"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles with their assigned role and line permissions"
+    },
+    "/lines/{lineId}": {
+      "schema": "ProductionLine",
+      "description": "Production lines with assigned supervisor email and stations"
+    },
+    "/workers/{workerId}": {
+      "schema": "Worker",
+      "description": "Factory workers skills and line assignments"
+    },
+    "/settings/{settingId}": {
+      "schema": "PlantSettings",
+      "description": "Global factory balancing targets, terminology, and leadership"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System audit trail entries"
+    }
+  }
+}

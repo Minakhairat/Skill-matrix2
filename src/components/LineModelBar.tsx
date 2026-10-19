@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ProductionLine, Model, TerminologyConfig } from '../types/matrix';
-import { Factory, Box, Search, Filter, ChevronDown, ChevronUp, Layers, Users, Cog, Building2 } from 'lucide-react';
+import { ProductionLine, Model, TerminologyConfig, AppUser } from '../types/matrix';
+import { Factory, Box, Search, Filter, ChevronDown, ChevronUp, Layers, Users, Cog, Building2, ShieldCheck, UserCheck, Lock } from 'lucide-react';
 import { formatUnitName, formatSubUnitName } from '../utils/constants';
 
 interface LineModelBarProps {
@@ -18,6 +18,7 @@ interface LineModelBarProps {
   targetWorkersPerStage: number;
   qualifiedWorkersMeetingTarget: number;
   terminology: TerminologyConfig;
+  currentUser?: AppUser | null;
 }
 
 export const LineModelBar: React.FC<LineModelBarProps> = ({
@@ -34,11 +35,19 @@ export const LineModelBar: React.FC<LineModelBarProps> = ({
   totalLineStagesCount,
   targetWorkersPerStage,
   qualifiedWorkersMeetingTarget,
-  terminology
+  terminology,
+  currentUser
 }) => {
   const [isFiltersExpandedOnMobile, setIsFiltersExpandedOnMobile] = useState(false);
 
   const UnitIcon = terminology.preset === 'machines_molds' ? Cog : terminology.preset === 'departments_products' ? Building2 : Factory;
+
+  // Check if current user is authorized to edit the selected line
+  const isSupervisor = currentUser?.role === 'supervisor';
+  const isLineAssignedToSupervisor = !currentUser || currentUser.role === 'admin' || (
+    currentUser.assignedLineIds.includes(selectedLine?.id) ||
+    (selectedLine?.supervisorEmail && selectedLine.supervisorEmail.toLowerCase().trim() === currentUser.email.toLowerCase().trim())
+  );
 
   return (
     <div className="bg-white border-b border-slate-200 py-2 sm:py-2.5 px-2.5 sm:px-6 lg:px-8 no-print">
@@ -51,7 +60,11 @@ export const LineModelBar: React.FC<LineModelBarProps> = ({
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:flex lg:flex-wrap items-center gap-1.5 sm:gap-2">
             
             {/* Line / Machine Selector */}
-            <div className="flex items-center gap-1.5 sm:gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2 sm:px-2.5 py-1.5">
+            <div className={`flex items-center gap-1.5 sm:gap-2 border rounded-lg px-2 sm:px-2.5 py-1.5 transition-colors ${
+              isSupervisor && !isLineAssignedToSupervisor
+                ? 'bg-amber-50/60 border-amber-300'
+                : 'bg-slate-50 border-slate-200'
+            }`}>
               <UnitIcon className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               <span className="text-[11px] sm:text-xs font-semibold text-slate-600 shrink-0 hidden xs:inline">
                 {terminology.lineLabel}:
@@ -64,11 +77,16 @@ export const LineModelBar: React.FC<LineModelBarProps> = ({
                 }}
                 className="text-xs sm:text-xs font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer w-full truncate"
               >
-                {lines.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {formatUnitName(l.name, terminology)}
-                  </option>
-                ))}
+                {lines.map((l) => {
+                  const isAssigned = currentUser?.assignedLineIds.includes(l.id) ||
+                    (l.supervisorEmail && l.supervisorEmail.toLowerCase().trim() === (currentUser?.email || '').toLowerCase().trim());
+                  const prefix = isSupervisor ? (isAssigned ? '⭐ ' : '🔒 ') : '';
+                  return (
+                    <option key={l.id} value={l.id}>
+                      {prefix}{formatUnitName(l.name, terminology)}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
@@ -156,6 +174,31 @@ export const LineModelBar: React.FC<LineModelBarProps> = ({
               محققو هدف الـ 3 {terminology.stageLabelPlural}:
               <strong className="font-mono text-indigo-700 font-bold tabular-nums mr-1">{qualifiedWorkersMeetingTarget}</strong>
             </span>
+          </div>
+
+          {/* Supervisor Email & Permission Badge */}
+          <div className="flex items-center gap-2 shrink-0">
+            {currentUser?.role === 'supervisor' ? (
+              isLineAssignedToSupervisor ? (
+                <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                  <UserCheck className="w-3 h-3 text-emerald-600" />
+                  <span>خطك المصرح لك بالتحكم فيه</span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-300">
+                  <Lock className="w-3 h-3 text-amber-600" />
+                  <span>للعرض فقط (غير مصرح لك بالتعديل)</span>
+                </span>
+              )
+            ) : (
+              <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                <span>المشرف:</span>
+                <strong className="text-slate-800">{selectedLine?.supervisor || 'غير محدد'}</strong>
+                {selectedLine?.supervisorEmail && (
+                  <span className="font-mono text-[10px] text-slate-400">({selectedLine.supervisorEmail})</span>
+                )}
+              </span>
+            )}
           </div>
         </div>
 

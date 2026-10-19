@@ -13,7 +13,8 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
-  Sparkles
+  Sparkles,
+  Lock
 } from 'lucide-react';
 
 interface SkillsMatrixGridProps {
@@ -24,6 +25,7 @@ interface SkillsMatrixGridProps {
   onEditWorker: (worker: Worker) => void;
   onDeleteWorker: (worker: Worker) => void;
   terminology?: TerminologyConfig;
+  readOnly?: boolean;
 }
 
 export const SkillsMatrixGrid: React.FC<SkillsMatrixGridProps> = ({
@@ -33,7 +35,8 @@ export const SkillsMatrixGrid: React.FC<SkillsMatrixGridProps> = ({
   onSelectWorkerDetails,
   onEditWorker,
   onDeleteWorker,
-  terminology
+  terminology,
+  readOnly = false
 }) => {
   const [pageSize, setPageSize] = useState<number>(50);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -58,6 +61,7 @@ export const SkillsMatrixGrid: React.FC<SkillsMatrixGridProps> = ({
 
   // Cycle to next skill level: 0 -> 1 -> 2 -> 3 -> 4 -> 0
   const handleCellClick = (workerId: string, stageId: string, currentLevel: SkillLevel) => {
+    if (readOnly) return;
     const nextLevel = ((currentLevel + 1) % 5) as SkillLevel;
     onUpdateWorkerSkill(workerId, stageId, nextLevel);
   };
@@ -72,6 +76,21 @@ export const SkillsMatrixGrid: React.FC<SkillsMatrixGridProps> = ({
   return (
     <div className="flex flex-col h-full bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
       
+      {/* ReadOnly Supervisor Notice */}
+      {readOnly && (
+        <div className="p-2 sm:px-4 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="font-semibold">
+              وضع القراءة فقط: هذا الخط مخصص لمشرف آخر في المصنع؛ مصرح لك بتعديل عمال ومحطات خطك فقط.
+            </span>
+          </div>
+          <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-300 shrink-0">
+            غير مصرح بالتعديل
+          </span>
+        </div>
+      )}
+
       {/* Matrix Controls & Guide Bar */}
       <div className="p-2.5 sm:p-3 sm:px-6 bg-slate-50/90 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2.5 text-xs">
         

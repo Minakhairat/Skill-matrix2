@@ -17,9 +17,13 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
-  MessageSquare
+  MessageSquare,
+  Cloud,
+  ShieldCheck,
+  UserCheck,
+  LogIn
 } from 'lucide-react';
-import { TerminologyConfig } from '../types/matrix';
+import { TerminologyConfig, AppUser } from '../types/matrix';
 import { getClientGeminiApiKey, getClientUserEmail } from '../utils/geminiService';
 
 export type TabType = 'matrix' | 'balancing' | 'ai-chat' | 'ai-advisor' | 'performance' | 'workers' | 'factory' | 'print';
@@ -36,6 +40,8 @@ interface HeaderProps {
   totalWorkersCount: number;
   terminology: TerminologyConfig;
   onOpenApiKeyModal?: () => void;
+  currentUser?: AppUser | null;
+  onOpenAuthModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -49,7 +55,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenClearAllModal,
   totalWorkersCount,
   terminology,
-  onOpenApiKeyModal
+  onOpenApiKeyModal,
+  currentUser,
+  onOpenAuthModal
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const clientKey = getClientGeminiApiKey();
@@ -168,6 +176,39 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
+            {/* Firebase Auth & Sync Status Pill */}
+            {onOpenAuthModal && (
+              <button
+                onClick={onOpenAuthModal}
+                title={currentUser ? `مسجل كـ: ${currentUser.role === 'admin' ? 'مدير النظام' : 'مشرف خط'} (${currentUser.email})` : 'تسجيل الدخول بالجيميل للمزامنة السحابية'}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap border shadow-2xs cursor-pointer ${
+                  currentUser
+                    ? currentUser.role === 'admin'
+                      ? 'bg-purple-50 text-purple-800 border-purple-300 hover:bg-purple-100'
+                      : 'bg-sky-50 text-sky-800 border-sky-300 hover:bg-sky-100'
+                    : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                }`}
+              >
+                <div className="relative">
+                  {currentUser ? (
+                    currentUser.role === 'admin' ? (
+                      <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
+                    ) : (
+                      <UserCheck className="w-3.5 h-3.5 text-sky-700" />
+                    )
+                  ) : (
+                    <Cloud className="w-3.5 h-3.5 text-slate-500" />
+                  )}
+                  <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${currentUser ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                </div>
+                <span className="hidden sm:inline">
+                  {currentUser 
+                    ? (currentUser.role === 'admin' ? '🛡️ أدمن (أونلاين)' : '👷 مشرف خط') 
+                    : '💾 أوفلاين | دخول'}
+                </span>
+              </button>
+            )}
+
             {/* Primary Action: Add Worker */}
             <button
               onClick={onOpenAddWorker}
@@ -264,6 +305,36 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Quick Utilities in Mobile Menu */}
           <div className="pt-2 border-t border-slate-200 space-y-1.5">
+            {onOpenAuthModal && (
+              <button
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  onOpenAuthModal();
+                }}
+                className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-xs font-bold transition-colors ${
+                  currentUser
+                    ? currentUser.role === 'admin'
+                      ? 'bg-purple-50 text-purple-900 border-purple-300'
+                      : 'bg-sky-50 text-sky-900 border-sky-300'
+                    : 'bg-slate-50 text-slate-800 border-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Cloud className="w-4 h-4 text-indigo-600" />
+                  <span>
+                    {currentUser 
+                      ? (currentUser.role === 'admin' ? `🛡️ مدير النظام: ${currentUser.email}` : `👷 مشرف خط: ${currentUser.email}`) 
+                      : 'تسجيل الدخول بالجيميل للمزامنة السحابية'}
+                  </span>
+                </div>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  currentUser ? 'bg-emerald-200 text-emerald-900' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {currentUser ? 'أونلاين 🌐' : 'أوفلاين 💾'}
+                </span>
+              </button>
+            )}
+
             {onOpenApiKeyModal && (
               <button
                 onClick={() => {

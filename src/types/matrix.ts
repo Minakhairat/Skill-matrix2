@@ -37,7 +37,18 @@ export interface ProductionLine {
   nameEn: string;
   code: string;
   supervisor: string;
+  supervisorEmail?: string; // بريد المشرف على جيميل للتحكم في هذا الخط
   models: Model[];
+}
+
+export type UserRole = 'admin' | 'supervisor';
+
+export interface AppUser {
+  uid: string;
+  email: string;
+  displayName?: string;
+  role: UserRole;
+  assignedLineIds: string[]; // الخطوط المخصصة لهذا المشرف
 }
 
 export interface Worker {

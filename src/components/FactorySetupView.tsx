@@ -4,9 +4,10 @@ import {
   Model, 
   Stage, 
   TerminologyConfig, 
-  TerminologyPreset,
-  SkillLevel,
-  PlantLeadership
+  TerminologyPreset, 
+  SkillLevel, 
+  PlantLeadership,
+  AppUser
 } from '../types/matrix';
 import { TERMINOLOGY_PRESETS } from '../utils/constants';
 import { 
@@ -22,10 +23,13 @@ import {
   Sliders, 
   Save, 
   Layers, 
-  ChevronRight,
-  HelpCircle,
-  AlertCircle,
-  Users
+  ChevronRight, 
+  HelpCircle, 
+  AlertCircle, 
+  Users,
+  Mail,
+  ShieldCheck,
+  UserCheck
 } from 'lucide-react';
 
 interface FactorySetupViewProps {
@@ -41,6 +45,7 @@ interface FactorySetupViewProps {
   onUpdateMinQualifiedLevel: (val: number) => void;
   leadership: PlantLeadership;
   onUpdateLeadership: (leadership: PlantLeadership) => void;
+  currentUser?: AppUser | null;
 }
 
 export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
@@ -55,7 +60,8 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
   minQualifiedLevel,
   onUpdateMinQualifiedLevel,
   leadership,
-  onUpdateLeadership
+  onUpdateLeadership,
+  currentUser
 }) => {
   // Navigation inside Setup View
   const [selectedLineId, setSelectedLineId] = useState<string>(lines[0]?.id || '');
@@ -77,6 +83,7 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
   const [lineName, setLineName] = useState('');
   const [lineCode, setLineCode] = useState('');
   const [lineSupervisor, setLineSupervisor] = useState('');
+  const [lineSupervisorEmail, setLineSupervisorEmail] = useState('');
 
   // Form states for Model / Mold
   const [modelName, setModelName] = useState('');
@@ -129,10 +136,14 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
     setTimeout(() => setLeadershipSaved(false), 2500);
   };
 
-  const handleUpdateLineSupervisor = (lineId: string, supervisor: string) => {
+  const handleUpdateLineSupervisor = (lineId: string, supervisor: string, email?: string) => {
     const updated = lines.map(l => {
       if (l.id === lineId) {
-        return { ...l, supervisor: supervisor.trim() };
+        return { 
+          ...l, 
+          supervisor: supervisor.trim(),
+          supervisorEmail: email !== undefined ? email.trim().toLowerCase() : l.supervisorEmail
+        };
       }
       return l;
     });
@@ -146,6 +157,7 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
     setLineName('');
     setLineCode(`MCH-${lines.length + 1}`);
     setLineSupervisor('');
+    setLineSupervisorEmail('');
   };
 
   const handleOpenEditLine = (line: ProductionLine) => {
@@ -154,6 +166,7 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
     setLineName(line.name);
     setLineCode(line.code);
     setLineSupervisor(line.supervisor);
+    setLineSupervisorEmail(line.supervisorEmail || '');
   };
 
   const handleSaveLine = (e: React.FormEvent) => {
@@ -168,7 +181,8 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
             ...l,
             name: lineName.trim(),
             code: lineCode.trim() || l.code,
-            supervisor: lineSupervisor.trim() || l.supervisor
+            supervisor: lineSupervisor.trim() || l.supervisor,
+            supervisorEmail: lineSupervisorEmail.trim().toLowerCase() || l.supervisorEmail
           };
         }
         return l;
@@ -184,6 +198,7 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
         nameEn: lineName.trim(),
         code: lineCode.trim() || `L-${lines.length + 1}`,
         supervisor: lineSupervisor.trim() || 'مشرف جديد',
+        supervisorEmail: lineSupervisorEmail.trim().toLowerCase(),
         models: [
           {
             id: defaultModelId,
@@ -643,20 +658,35 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
           
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {lines.map((ln) => (
-              <div key={ln.id} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1.5">
+              <div key={ln.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-900 truncate">{ln.name}</span>
                   <span className="font-mono text-[10px] text-slate-500">{ln.code}</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-slate-500 shrink-0">المشرف:</span>
-                  <input
-                    type="text"
-                    defaultValue={ln.supervisor}
-                    onBlur={(e) => handleUpdateLineSupervisor(ln.id, e.target.value)}
-                    placeholder="اسم المشرف المسؤول"
-                    className="flex-1 px-2 py-1 text-xs bg-white border border-slate-300 rounded text-slate-900 focus:ring-1 focus:ring-purple-500"
-                  />
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-slate-500 shrink-0 w-16">المشرف:</span>
+                    <input
+                      type="text"
+                      defaultValue={ln.supervisor}
+                      onBlur={(e) => handleUpdateLineSupervisor(ln.id, e.target.value, ln.supervisorEmail)}
+                      placeholder="اسم المشرف المسؤول"
+                      className="flex-1 px-2 py-1 text-xs bg-white border border-slate-300 rounded text-slate-900 focus:ring-1 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-indigo-600 font-semibold shrink-0 w-16 flex items-center gap-0.5">
+                      <Mail className="w-2.5 h-2.5" />
+                      <span>جيميل:</span>
+                    </span>
+                    <input
+                      type="email"
+                      defaultValue={ln.supervisorEmail || ''}
+                      onBlur={(e) => handleUpdateLineSupervisor(ln.id, ln.supervisor, e.target.value)}
+                      placeholder="supervisor@gmail.com"
+                      className="flex-1 px-2 py-1 text-[11px] font-mono bg-white border border-slate-300 rounded text-slate-900 focus:ring-1 focus:ring-indigo-500"
+                    />
+                  </div>
                 </div>
               </div>
             ))}
@@ -992,6 +1022,21 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
                     placeholder="اسم المشرف"
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-slate-900"
                   />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    البريد الإلكتروني لمشرف الخط (Google Gmail):
+                  </label>
+                  <input
+                    type="email"
+                    value={lineSupervisorEmail}
+                    onChange={(e) => setLineSupervisorEmail(e.target.value)}
+                    placeholder="supervisor@gmail.com"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-xs focus:ring-1 focus:ring-slate-900"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    * عند تسجيل هذا المشرف دخوله بحساب الجيميل، سيتم تقييد صلاحياته تلقائياً للتحكم في هذا الخط فقط.
+                  </span>
                 </div>
               </div>
               <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">

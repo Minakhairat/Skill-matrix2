@@ -1,0 +1,168 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAdmin() {
+      return isVerified() && (
+        request.auth.token.email == 'minakhairat1@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidAdmin(data) {
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.keys().hasOnly(['uid', 'email', 'createdAt']) &&
+             data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 128;
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'assignedLineIds', 'createdAt', 'updatedAt']) &&
+             data.uid is string && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() <= 128 &&
+             (data.role == 'admin' || data.role == 'supervisor') &&
+             (!('assignedLineIds' in data) || data.assignedLineIds is list);
+    }
+
+    function isValidLine(data) {
+      return data.keys().hasAll(['id', 'name']) &&
+             data.keys().hasOnly(['id', 'name', 'supervisorEmail', 'supervisorName', 'shiftCount', 'models', 'updatedAt', 'updatedBy']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.name is string && data.name.size() <= 128 &&
+             (!('supervisorEmail' in data) || (data.supervisorEmail is string && data.supervisorEmail.size() <= 128)) &&
+             (!('shiftCount' in data) || data.shiftCount is number) &&
+             (!('models' in data) || data.models is list);
+    }
+
+    function isValidWorker(data) {
+      return data.keys().hasAll(['id', 'code', 'name', 'lineId']) &&
+             data.keys().hasOnly(['id', 'code', 'name', 'department', 'lineId', 'shift', 'skills', 'performanceRate', 'notes', 'updatedAt', 'updatedBy']) &&
+             data.id is string && data.id.size() <= 64 &&
+             data.code is string && data.code.size() <= 64 &&
+             data.name is string && data.name.size() <= 128 &&
+             data.lineId is string && data.lineId.size() <= 64 &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+             (!('performanceRate' in data) || data.performanceRate is number);
+    }
+
+    function isValidPlantSettings(data) {
+      return data.keys().hasAll(['targetWorkersPerStage', 'targetStagesPerWorker']) &&
+             data.keys().hasOnly(['targetWorkersPerStage', 'targetStagesPerWorker', 'minQualifiedLevel', 'terminology', 'leadership', 'updatedAt', 'updatedBy']) &&
+             data.targetWorkersPerStage is number &&
+             data.targetStagesPerWorker is number;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['id', 'timestamp', 'actionType', 'title']) &&
+             data.keys().hasOnly(['id', 'timestamp', 'actionType', 'title', 'details', 'badgeLabel', 'badgeClass', 'actorEmail']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.timestamp is string && data.timestamp.size() <= 64 &&
+             data.actionType is string && data.actionType.size() <= 64 &&
+             data.title is string && data.title.size() <= 200 &&
+             (!('details' in data) || (data.details is string && data.details.size() <= 2000));
+    }
+
+    // Admins Collection
+    match /admins/{adminId} {
+      allow get: if isAdmin() || (isSignedIn() && request.auth.uid == adminId);
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() && isValidId(adminId) && isValidAdmin(incoming());
+      allow delete: if isAdmin() && request.auth.uid != adminId;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow get: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) && isValidUserProfile(incoming()) && (
+        isAdmin() ||
+        (isVerified() && request.auth.uid == userId && incoming().uid == request.auth.uid && incoming().role == 'supervisor')
+      );
+      allow update: if isValidId(userId) && isValidUserProfile(incoming()) && (
+        isAdmin() ||
+        (isVerified() && request.auth.uid == userId && incoming().uid == existing().uid &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt']))
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Lines Collection
+    match /lines/{lineId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidId(lineId) && isValidLine(incoming());
+      allow update: if isValidId(lineId) && isValidLine(incoming()) && (
+        isAdmin() ||
+        (isVerified() && existing().supervisorEmail == request.auth.token.email &&
+         incoming().id == existing().id &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['models', 'shiftCount', 'name', 'updatedAt', 'updatedBy']))
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Workers Collection
+    match /workers/{workerId} {
+      allow read: if isSignedIn();
+      allow create: if isValidId(workerId) && isValidWorker(incoming()) && (
+        isAdmin() ||
+        (isVerified() &&
+         exists(/databases/$(database)/documents/lines/$(incoming().lineId)) &&
+         get(/databases/$(database)/documents/lines/$(incoming().lineId)).data.supervisorEmail == request.auth.token.email)
+      );
+      allow update: if isValidId(workerId) && isValidWorker(incoming()) && (
+        isAdmin() ||
+        (isVerified() &&
+         incoming().id == existing().id &&
+         incoming().lineId == existing().lineId &&
+         exists(/databases/$(database)/documents/lines/$(existing().lineId)) &&
+         get(/databases/$(database)/documents/lines/$(existing().lineId)).data.supervisorEmail == request.auth.token.email &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['skills', 'performanceRate', 'shift', 'notes', 'updatedAt', 'updatedBy', 'department', 'name', 'code']))
+      );
+      allow delete: if isValidId(workerId) && (
+        isAdmin() ||
+        (isVerified() &&
+         exists(/databases/$(database)/documents/lines/$(existing().lineId)) &&
+         get(/databases/$(database)/documents/lines/$(existing().lineId)).data.supervisorEmail == request.auth.token.email)
+      );
+    }
+
+    // Settings Collection
+    match /settings/{settingId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidId(settingId) && isValidPlantSettings(incoming());
+    }
+
+    // Audit Logs Collection (Append-only)
+    match /audit_logs/{logId} {
+      allow read: if isSignedIn();
+      allow create: if isVerified() && isValidId(logId) && isValidAuditLog(incoming());
+      allow update, delete: if false;
+    }
+  }
+}

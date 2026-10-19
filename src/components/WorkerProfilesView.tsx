@@ -29,6 +29,7 @@ interface WorkerProfilesViewProps {
   onEditWorker: (worker: Worker) => void;
   onDeleteWorker: (worker: Worker) => void;
   terminology?: TerminologyConfig;
+  readOnly?: boolean;
 }
 
 export const WorkerProfilesView: React.FC<WorkerProfilesViewProps> = ({
@@ -40,7 +41,8 @@ export const WorkerProfilesView: React.FC<WorkerProfilesViewProps> = ({
   onOpenWorkerModal,
   onEditWorker,
   onDeleteWorker,
-  terminology
+  terminology,
+  readOnly = false
 }) => {
   const [filterStatus, setFilterStatus] = useState<'all' | 'met' | 'needs_training'>('all');
   const [search, setSearch] = useState<string>('');

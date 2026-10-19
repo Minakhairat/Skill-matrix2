@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { ProductionLine, Model, Worker, SkillLevel, Stage, AuditLogEntry, ActionType, TerminologyConfig, PlantLeadership, FullSystemBackup } from './types/matrix';
+import { ProductionLine, Model, Worker, SkillLevel, Stage, AuditLogEntry, ActionType, TerminologyConfig, PlantLeadership, FullSystemBackup, AppUser } from './types/matrix';
 import { generateInitialLines, generate400Workers } from './utils/mockGenerator';
 import { 
   DEFAULT_WORKSTATION_TARGET, 
@@ -30,7 +30,19 @@ import { WorkerEditModal } from './components/WorkerEditModal';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
 import { HistoryModal } from './components/HistoryModal';
 import { GeminiApiKeyModal } from './components/GeminiApiKeyModal';
-import { Bot, MessageSquare } from 'lucide-react';
+import { AuthModal } from './components/AuthModal';
+import { 
+  testConnection, 
+  auth, 
+  onAuthStateChanged, 
+  resolveUserPermissions, 
+  setupRealtimeSync,
+  syncFullDatasetToFirestore,
+  updateWorkerInFirestore,
+  deleteWorkerFromFirestore,
+  updateLineInFirestore
+} from './utils/firebase';
+import { Bot, MessageSquare, Cloud, ShieldCheck, UserCheck, AlertTriangle, RefreshCw, CheckCircle2, Lock } from 'lucide-react';
 import { GeminiAIChatView } from './components/GeminiAIChatView';
 import { Footer } from './components/Footer';
 import { calculateWorkerFlexibility } from './utils/matrixCalculations';
@@ -133,6 +145,61 @@ export default function App() {
   const [selectedWorkerForModal, setSelectedWorkerForModal] = useState<Worker | null>(null);
   const [isFloatingChatOpen, setIsFloatingChatOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
+    try {
+      const saved = localStorage.getItem('matrixpro_current_user');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return null;
+  });
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [cloudSyncSuccessMsg, setCloudSyncSuccessMsg] = useState<string | null>(null);
+
+  // Initial Firestore Connection Test & Auth Observer
+  useEffect(() => {
+    testConnection();
+    const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
+        const resolved = await resolveUserPermissions(fbUser, lines, currentUser?.role);
+        setCurrentUser(resolved);
+        try {
+          localStorage.setItem('matrixpro_current_user', JSON.stringify(resolved));
+        } catch (e) {}
+      }
+    });
+    return () => unsubAuth();
+  }, [lines]);
+
+  // Real-time synchronization when user is authenticated
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsubRealtime = setupRealtimeSync({
+      onLinesUpdate: (cloudLines) => {
+        if (cloudLines && cloudLines.length > 0) {
+          setLines(cloudLines);
+        }
+      },
+      onWorkersUpdate: (cloudWorkers) => {
+        if (cloudWorkers && cloudWorkers.length > 0) {
+          setWorkers(cloudWorkers);
+        }
+      },
+      onError: (err) => {
+        console.warn('Realtime sync status:', err);
+      }
+    });
+    return () => unsubRealtime();
+  }, [currentUser]);
+
+  // If supervisor logs in and has assigned line, ensure selectedLineId is their line
+  useEffect(() => {
+    if (currentUser?.role === 'supervisor' && currentUser.assignedLineIds.length > 0) {
+      if (!currentUser.assignedLineIds.includes(selectedLineId)) {
+        setSelectedLineId(currentUser.assignedLineIds[0]);
+      }
+    }
+  }, [currentUser]);
 
   // Persistence to LocalStorage
   useEffect(() => {
@@ -277,7 +344,15 @@ export default function App() {
         `تم تعديل التقييم في ${terminology.stageLabel} "${targetStage.name}" من المستوى ${oldLevel} إلى المستوى ${newLevel}.`
       );
     }
-  }, [workers, currentStages, logAction, terminology]);
+
+    if (currentUser) {
+      const targetWorker = workers.find(w => w.id === workerId);
+      if (targetWorker) {
+        const withNew = { ...targetWorker, skills: { ...targetWorker.skills, [stageId]: newLevel } };
+        updateWorkerInFirestore(withNew).catch(err => console.warn('Could not sync worker skill to Firestore:', err));
+      }
+    }
+  }, [workers, currentStages, logAction, terminology, currentUser]);
 
   const handleTransferWorkerLine = useCallback((workerId: string, targetLineId: string) => {
     const targetWorker = workers.find(w => w.id === workerId);
@@ -299,6 +374,37 @@ export default function App() {
     }
   }, [workers, lines, logAction, terminology]);
 
+  // Check if current user is permitted to edit this line
+  const isCurrentLinePermitted = useMemo(() => {
+    if (!currentUser || currentUser.role === 'admin') return true;
+    return (
+      currentUser.assignedLineIds.includes(selectedLineId) ||
+      (selectedLine?.supervisorEmail && selectedLine.supervisorEmail.toLowerCase().trim() === currentUser.email.toLowerCase().trim())
+    );
+  }, [currentUser, selectedLineId, selectedLine]);
+
+  // Cloud Database Full Push (Admin feature)
+  const handlePushFullDataToCloud = async () => {
+    try {
+      setIsCloudSyncing(true);
+      const res = await syncFullDatasetToFirestore({
+        lines,
+        workers,
+        settings: { targetWorkersPerStage, targetStagesPerWorker, minQualifiedLevel },
+        terminology,
+        leadership
+      });
+      setCloudSyncSuccessMsg(`تم رفع ومزامنة ${res.linesCount} خطوط و ${res.workersCount} عمال بنجاح إلى سحابة Firestore!`);
+      logAction('data_imported', 'مزامنة سحابية (Firestore)', `تم رفع قاعدة البيانات كاملة (${res.workersCount} عمال و ${res.linesCount} خطوط) إلى السحابة.`);
+      setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
+    } catch (err: any) {
+      console.error('Cloud push failed:', err);
+      alert('تعذر الرفع إلى السحابة: ' + (err?.message || ''));
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
   const handleSaveWorker = (savedWorker: Worker) => {
     const exists = workers.some(w => w.id === savedWorker.id);
     if (exists) {
@@ -319,6 +425,10 @@ export default function App() {
       );
     }
     setWorkerToEdit(null);
+
+    if (currentUser) {
+      updateWorkerInFirestore(savedWorker).catch(err => console.warn('Could not sync worker to Firestore:', err));
+    }
   };
 
   const handleDeleteWorker = (workerId: string) => {
@@ -334,6 +444,10 @@ export default function App() {
     setWorkerToDelete(null);
     if (selectedWorkerForModal?.id === workerId) {
       setSelectedWorkerForModal(null);
+    }
+
+    if (currentUser) {
+      deleteWorkerFromFirestore(workerId).catch(err => console.warn('Could not delete worker from Firestore:', err));
     }
   };
 
@@ -471,6 +585,11 @@ export default function App() {
       `تحديث بنية ${terminology.lineLabelPlural} والاسطمبات`,
       `تم حفظ التغييرات على قائمة ${terminology.lineLabelPlural} و ${terminology.modelLabelPlural} و ${terminology.stageLabelPlural}.`
     );
+    if (currentUser) {
+      for (const line of newLines) {
+        updateLineInFirestore(line).catch(err => console.warn('Could not sync line to Firestore:', err));
+      }
+    }
   };
 
   // Qualified workers meeting flexibility target on this line
@@ -500,7 +619,101 @@ export default function App() {
         totalWorkersCount={workers.length}
         terminology={terminology}
         onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
+        currentUser={currentUser}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
       />
+
+      {/* Cloud & Offline Connectivity Status Alert Banner */}
+      <div className="bg-slate-100 border-b border-slate-200 text-xs no-print">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2">
+          {currentUser ? (
+            currentUser.role === 'admin' ? (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-purple-50/80 border border-purple-200/80 p-2.5 rounded-xl text-purple-950">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-purple-600 text-white rounded-lg shrink-0">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold flex items-center gap-1.5">
+                      <span>أنت تعمل بصلاحيات مدير النظام (Admin)</span>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
+                        متصل بسحابة Firestore 🌐
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-purple-800 mt-0.5">
+                      البيانات تُحفظ وتُزامن أونلاين. يمكنك تعيين إيميل المشرف لكل خط من صفحة الإعدادات، أو رفع كامل قاعدة البيانات الآن.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                  <button
+                    type="button"
+                    disabled={isCloudSyncing}
+                    onClick={handlePushFullDataToCloud}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white rounded-lg font-bold text-xs shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isCloudSyncing ? 'animate-spin' : ''}`} />
+                    <span>{isCloudSyncing ? 'جارٍ الرفع...' : 'رفع البيانات للسحابة (Firestore)'}</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-sky-50/80 border border-sky-200/80 p-2.5 rounded-xl text-sky-950">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-sky-600 text-white rounded-lg shrink-0">
+                    <UserCheck className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold flex items-center gap-1.5">
+                      <span>مشرف خط: {currentUser.email}</span>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
+                        متصل أونلاين 🌐
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-sky-800 mt-0.5">
+                      {currentUser.assignedLineIds.length > 0 
+                        ? `الخطوط المصرح لك بإدارتها وتعديلها: ${lines.filter(l => currentUser.assignedLineIds.includes(l.id)).map(l => l.name).join('، ')}`
+                        : 'لم يتم تعيين أي خط لهذا البريد حتى الآن من قبل الأدمن.'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="px-2.5 py-1 text-[11px] font-bold text-sky-800 bg-sky-100 hover:bg-sky-200 rounded-lg transition-colors self-end sm:self-center cursor-pointer"
+                >
+                  تفاصيل الحساب
+                </button>
+              </div>
+            )
+          ) : (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50 border border-slate-200 p-2 rounded-xl text-slate-700">
+              <div className="flex items-center gap-2">
+                <Cloud className="w-4 h-4 text-slate-500 shrink-0" />
+                <span className="text-[11px]">
+                  <strong>وضع التشغيل المحلي (أوفلاين)</strong>: البيانات تعمل وتُحفظ محلياً على هذا الجهاز. يمكنك تسجيل الدخول بالجيميل في أي وقت للمزامنة السحابية وتعيين صلاحيات المشرفين.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAuthModalOpen(true)}
+                className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs transition-colors self-end sm:self-center shrink-0 cursor-pointer shadow-xs"
+              >
+                تسجيل الدخول (Google Gmail)
+              </button>
+            </div>
+          )}
+
+          {cloudSyncSuccessMsg && (
+            <div className="mt-2 p-2 bg-emerald-100 border border-emerald-300 text-emerald-900 rounded-lg font-bold text-xs flex items-center gap-2 animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{cloudSyncSuccessMsg}</span>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Production Line / Machine Toolbar (Shown when not in Factory Setup or Print) */}
       {activeTab !== 'factory' && selectedLine && selectedModel && (
@@ -519,6 +732,7 @@ export default function App() {
           targetWorkersPerStage={targetWorkersPerStage}
           qualifiedWorkersMeetingTarget={qualifiedWorkersMeetingTarget}
           terminology={terminology}
+          currentUser={currentUser}
         />
       )}
 
@@ -529,6 +743,7 @@ export default function App() {
             <SkillsMatrixGrid
               workers={filteredLineWorkers}
               stages={currentStages}
+              readOnly={!isCurrentLinePermitted}
               onUpdateWorkerSkill={handleUpdateWorkerSkill}
               onSelectWorkerDetails={(worker) => setSelectedWorkerForModal(worker)}
               onEditWorker={(worker) => {
@@ -605,6 +820,7 @@ export default function App() {
             }}
             onDeleteWorker={(worker) => setWorkerToDelete(worker)}
             terminology={terminology}
+            readOnly={!isCurrentLinePermitted}
           />
         )}
 
@@ -622,6 +838,7 @@ export default function App() {
             onUpdateMinQualifiedLevel={setMinQualifiedLevel}
             leadership={leadership}
             onUpdateLeadership={setLeadership}
+            currentUser={currentUser}
           />
         )}
 
@@ -710,6 +927,25 @@ export default function App() {
       <GeminiApiKeyModal
         isOpen={isApiKeyModalOpen}
         onClose={() => setIsApiKeyModalOpen(false)}
+      />
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        currentUser={currentUser}
+        onUserChange={(user) => {
+          setCurrentUser(user);
+          try {
+            if (user) {
+              localStorage.setItem('matrixpro_current_user', JSON.stringify(user));
+            } else {
+              localStorage.removeItem('matrixpro_current_user');
+            }
+          } catch (e) {}
+        }}
+        lines={lines}
+        onSyncAllToCloud={handlePushFullDataToCloud}
+        isSyncing={isCloudSyncing}
       />
 
       {/* Floating Gemini AI Chatbot Trigger (Accessible from all screens) */}
