@@ -20,6 +20,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { TerminologyConfig } from '../types/matrix';
+import { getClientGeminiApiKey, getClientUserEmail } from '../utils/geminiService';
 
 export type TabType = 'matrix' | 'balancing' | 'ai-chat' | 'ai-advisor' | 'performance' | 'workers' | 'factory' | 'print';
 
@@ -34,6 +35,7 @@ interface HeaderProps {
   onOpenClearAllModal: () => void;
   totalWorkersCount: number;
   terminology: TerminologyConfig;
+  onOpenApiKeyModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -46,9 +48,13 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenHistory,
   onOpenClearAllModal,
   totalWorkersCount,
-  terminology
+  terminology,
+  onOpenApiKeyModal
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const clientKey = getClientGeminiApiKey();
+  const clientEmail = getClientUserEmail();
+  const hasSavedKey = Boolean(clientKey && clientKey.length > 0);
 
   const navItems: { id: TabType; label: string; shortLabel: string; icon: React.ElementType; color: string; activeColor: string }[] = [
     { id: 'matrix', label: 'المصفوفة الكاملة', shortLabel: 'المصفوفة', icon: Table2, color: 'text-emerald-600', activeColor: 'bg-emerald-600 text-white' },
@@ -138,6 +144,29 @@ export const Header: React.FC<HeaderProps> = ({
               <Trash2 className="w-3.5 h-3.5 text-rose-600" />
               <span className="hidden lg:inline">تصفير</span>
             </button>
+
+            {/* Gemini AI Key & Account Configuration */}
+            {onOpenApiKeyModal && (
+              <button
+                onClick={onOpenApiKeyModal}
+                title="تخصيص وربط حسابك بـ Google Gemini AI"
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap border shadow-2xs cursor-pointer ${
+                  hasSavedKey 
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100' 
+                    : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                }`}
+              >
+                <div className="relative">
+                  <Sparkles className={`w-3.5 h-3.5 ${hasSavedKey ? 'text-emerald-600' : 'text-indigo-600'}`} />
+                  <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${hasSavedKey ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
+                </div>
+                <span className="hidden sm:inline">
+                  {hasSavedKey 
+                    ? (clientEmail ? `${clientEmail.split('@')[0]} (Gemini)` : 'Gemini AI مفعل') 
+                    : 'ربط Gemini AI'}
+                </span>
+              </button>
+            )}
 
             {/* Primary Action: Add Worker */}
             <button
@@ -235,6 +264,34 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Quick Utilities in Mobile Menu */}
           <div className="pt-2 border-t border-slate-200 space-y-1.5">
+            {onOpenApiKeyModal && (
+              <button
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  onOpenApiKeyModal();
+                }}
+                className={`w-full flex items-center justify-between p-2.5 rounded-xl border text-xs font-bold transition-colors ${
+                  hasSavedKey
+                    ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                    : 'bg-indigo-50 text-indigo-900 border-indigo-200'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles className={`w-4 h-4 ${hasSavedKey ? 'text-emerald-600' : 'text-indigo-600'}`} />
+                  <span>
+                    {hasSavedKey
+                      ? (clientEmail ? `حساب Gemini: ${clientEmail}` : 'Google Gemini AI مفعل')
+                      : 'ربط بريدك بـ Google Gemini AI'}
+                  </span>
+                </div>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  hasSavedKey ? 'bg-emerald-200 text-emerald-900' : 'bg-indigo-200 text-indigo-900'
+                }`}>
+                  {hasSavedKey ? 'متصل ✅' : 'إعداد'}
+                </span>
+              </button>
+            )}
+
             <div className="text-[10px] font-bold text-slate-400 px-2">إجراءات سريعة:</div>
             <div className="grid grid-cols-2 gap-1.5">
               <button

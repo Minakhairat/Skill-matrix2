@@ -29,6 +29,7 @@ import { ImportExportModal } from './components/ImportExportModal';
 import { WorkerEditModal } from './components/WorkerEditModal';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
 import { HistoryModal } from './components/HistoryModal';
+import { GeminiApiKeyModal } from './components/GeminiApiKeyModal';
 import { Bot, MessageSquare } from 'lucide-react';
 import { GeminiAIChatView } from './components/GeminiAIChatView';
 import { Footer } from './components/Footer';
@@ -131,6 +132,7 @@ export default function App() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [selectedWorkerForModal, setSelectedWorkerForModal] = useState<Worker | null>(null);
   const [isFloatingChatOpen, setIsFloatingChatOpen] = useState(false);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
 
   // Persistence to LocalStorage
   useEffect(() => {
@@ -497,6 +499,7 @@ export default function App() {
         onOpenClearAllModal={() => setIsClearAllModalOpen(true)}
         totalWorkersCount={workers.length}
         terminology={terminology}
+        onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
       />
 
       {/* Production Line / Machine Toolbar (Shown when not in Factory Setup or Print) */}
@@ -702,6 +705,11 @@ export default function App() {
         logs={logs}
         onClearHistory={handleClearHistory}
         onResetHistory={handleResetHistory}
+      />
+
+      <GeminiApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
       />
 
       {/* Floating Gemini AI Chatbot Trigger (Accessible from all screens) */}

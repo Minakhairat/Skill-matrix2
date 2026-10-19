@@ -43,6 +43,30 @@ export function setClientGeminiApiKey(key: string): void {
   }
 }
 
+export const USER_EMAIL_STORAGE_KEY = 'matrixpro_user_email';
+
+export function getClientUserEmail(): string {
+  try {
+    const email = localStorage.getItem(USER_EMAIL_STORAGE_KEY);
+    if (email && email.trim().length > 0) return email.trim();
+  } catch (e) {
+    // Ignore localStorage restrictions
+  }
+  return '';
+}
+
+export function setClientUserEmail(email: string): void {
+  try {
+    if (!email || email.trim() === '') {
+      localStorage.removeItem(USER_EMAIL_STORAGE_KEY);
+    } else {
+      localStorage.setItem(USER_EMAIL_STORAGE_KEY, email.trim());
+    }
+  } catch (e) {
+    console.error('Failed to save email to localStorage', e);
+  }
+}
+
 export function removeClientGeminiApiKey(): void {
   try {
     localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
