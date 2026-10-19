@@ -587,7 +587,13 @@ export default function App() {
     );
     if (currentUser) {
       for (const line of newLines) {
-        updateLineInFirestore(line).catch(err => console.warn('Could not sync line to Firestore:', err));
+        const isPermitted = currentUser.role === 'admin' || 
+          currentUser.assignedLineIds.includes(line.id) ||
+          (line.supervisorEmail && line.supervisorEmail.toLowerCase().trim() === currentUser.email.toLowerCase().trim());
+
+        if (isPermitted) {
+          updateLineInFirestore(line).catch(err => console.warn('Could not sync line to Firestore:', err));
+        }
       }
     }
   };

@@ -8,14 +8,12 @@ import {
   Database, 
   AlertTriangle, 
   CheckCircle2, 
-  Lock, 
   RefreshCw,
   Mail,
-  User,
-  ExternalLink
+  User
 } from 'lucide-react';
 import { ProductionLine, AppUser, UserRole } from '../types/matrix';
-import { loginWithGoogle, logoutUser, PRIMARY_ADMIN_EMAIL } from '../utils/firebase';
+import { loginWithGoogle, logoutUser, DEFAULT_ADMIN_EMAILS, auth, setUserRole } from '../utils/firebase';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -39,32 +37,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [selectedRole, setSelectedRole] = useState<UserRole>(currentUser?.role || 'supervisor');
+  const [initialRoleChoice, setInitialRoleChoice] = useState<UserRole>('admin');
 
   if (!isOpen) return null;
 
-  const handleGoogleSignIn = async (roleChoice?: UserRole) => {
+  const handleGoogleSignIn = async (roleChoice: UserRole = initialRoleChoice) => {
     try {
       setLoading(true);
       setErrorMsg(null);
       const user = await loginWithGoogle();
       const normalizedEmail = (user.email || '').toLowerCase().trim();
-      const isPrimary = normalizedEmail === PRIMARY_ADMIN_EMAIL.toLowerCase().trim();
+      const isDefaultAdmin = DEFAULT_ADMIN_EMAILS.includes(normalizedEmail);
 
       // Find lines assigned to this supervisor
       const assigned = lines
         .filter(l => (l.supervisorEmail || '').toLowerCase().trim() === normalizedEmail)
         .map(l => l.id);
 
-      // Determine role
-      let finalRole: UserRole = 'supervisor';
-      if (isPrimary) {
-        finalRole = 'admin';
-      } else if (roleChoice === 'admin') {
-        finalRole = 'admin';
-      } else {
-        finalRole = 'supervisor';
-      }
+      // Determine role: if pre-approved admin email or user picked admin -> admin; else supervisor
+      let finalRole: UserRole = isDefaultAdmin || roleChoice === 'admin' ? 'admin' : 'supervisor';
 
       const newAppUser: AppUser = {
         uid: user.uid,
@@ -73,6 +64,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         role: finalRole,
         assignedLineIds: assigned
       };
+
+      // Persist role in Firestore
+      await setUserRole(user, finalRole, assigned);
 
       onUserChange(newAppUser);
       setSuccessMsg(`تم تسجيل الدخول بنجاح كـ ${finalRole === 'admin' ? 'مدير النظام (Admin)' : 'مشرف خط'}!`);
@@ -88,9 +82,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleRoleToggle = (newRole: UserRole) => {
+  const handleRoleToggle = async (newRole: UserRole) => {
     if (!currentUser) return;
-    setSelectedRole(newRole);
     
     // Check if lines are assigned
     const assigned = lines
@@ -103,6 +96,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       assignedLineIds: assigned
     };
     onUserChange(updatedUser);
+
+    if (auth.currentUser) {
+      try {
+        await setUserRole(auth.currentUser, newRole, assigned);
+      } catch (e) {
+        console.warn('Could not sync role to Firestore:', e);
+      }
+    }
+
     setSuccessMsg(`تم تحديث الصلاحية إلى ${newRole === 'admin' ? 'مدير النظام (Admin)' : 'مشرف خط'} بنجاح!`);
     setTimeout(() => setSuccessMsg(null), 2000);
   };
@@ -144,7 +146,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
           <button 
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -197,13 +199,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               {/* Role Toggle Switch */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-2">
-                  اختر صفتك في المصنع:
+                  تحديد الصلاحية في المصنع:
                 </label>
                 <div className="grid grid-cols-2 gap-2.5">
                   <button
                     type="button"
                     onClick={() => handleRoleToggle('admin')}
-                    className={`p-3 rounded-xl border text-right transition-all flex flex-col justify-between ${
+                    className={`p-3 rounded-xl border text-right transition-all flex flex-col justify-between cursor-pointer ${
                       currentUser.role === 'admin'
                         ? 'border-purple-600 bg-purple-50/60 ring-2 ring-purple-500/20'
                         : 'border-slate-200 hover:border-slate-300 bg-white'
@@ -216,7 +218,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </span>
                       {currentUser.role === 'admin' && <CheckCircle2 className="w-4 h-4 text-purple-600" />}
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-1.5">
+                    <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
                       صلاحيات كاملة: إنشاء وتعديل كل الخطوط، رفع البيانات للسحابة، وتعيين إيميلات المشرفين.
                     </p>
                   </button>
@@ -224,7 +226,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <button
                     type="button"
                     onClick={() => handleRoleToggle('supervisor')}
-                    className={`p-3 rounded-xl border text-right transition-all flex flex-col justify-between ${
+                    className={`p-3 rounded-xl border text-right transition-all flex flex-col justify-between cursor-pointer ${
                       currentUser.role === 'supervisor'
                         ? 'border-sky-600 bg-sky-50/60 ring-2 ring-sky-500/20'
                         : 'border-slate-200 hover:border-slate-300 bg-white'
@@ -237,7 +239,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </span>
                       {currentUser.role === 'supervisor' && <CheckCircle2 className="w-4 h-4 text-sky-600" />}
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-1.5">
+                    <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
                       رؤية وتعديل الخطوط والعمال المخصصة لإيميلك فقط بواسطة الأدمن.
                     </p>
                   </button>
@@ -309,7 +311,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   type="button"
                   onClick={handleSignOut}
                   disabled={loading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-rose-700 hover:bg-rose-50 rounded-lg font-bold transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-rose-700 hover:bg-rose-50 rounded-lg font-bold transition-colors cursor-pointer"
                 >
                   <LogOut className="w-3.5 h-3.5 text-rose-600" />
                   <span>تسجيل الخروج</span>
@@ -318,7 +320,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs shadow-xs"
+                  className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs shadow-xs cursor-pointer"
                 >
                   تم، المتابعة إلى النظام
                 </button>
@@ -334,8 +336,58 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   💡 تسجيل الدخول بالبريد الإلكتروني (جيميل Gmail):
                 </div>
                 <p className="text-[11px] text-indigo-800 leading-relaxed">
-                  يتيح لك تسجيل الدخول حفظ البيانات أونلاين ومشاركتها مع فريق العمل. حدد صفتك كمدير عام للنظام (Admin) أو مشرف مخصص لخط معين.
+                  سجل دخولك بجيميل وحدد صفتك كـ <strong>مدير النظام (Admin)</strong> للتحكم الكامل، أو <strong>مشرف خط (تابع للأدمن)</strong> لإدارة الخط المخصص لك.
                 </p>
+              </div>
+
+              {/* Pre-login Role Selector */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  حدد صفتك قبل تسجيل الدخول:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setInitialRoleChoice('admin')}
+                    className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${
+                      initialRoleChoice === 'admin'
+                        ? 'border-purple-600 bg-purple-50 ring-2 ring-purple-500/20'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between font-bold text-slate-900 text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <ShieldCheck className="w-4 h-4 text-purple-600" />
+                        <span>مدير عام (Admin)</span>
+                      </span>
+                      {initialRoleChoice === 'admin' && <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />}
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      صلاحيات كاملة للتحكم في جميع الخطوط وقاعدة البيانات.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setInitialRoleChoice('supervisor')}
+                    className={`p-2.5 rounded-xl border text-right transition-all cursor-pointer ${
+                      initialRoleChoice === 'supervisor'
+                        ? 'border-sky-600 bg-sky-50 ring-2 ring-sky-500/20'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between font-bold text-slate-900 text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <UserCheck className="w-4 h-4 text-sky-600" />
+                        <span>مشرف (تابع للأدمن)</span>
+                      </span>
+                      {initialRoleChoice === 'supervisor' && <CheckCircle2 className="w-3.5 h-3.5 text-sky-600" />}
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      التحكم فقط في الخط الذي حدده الأدمن لإيميلك.
+                    </p>
+                  </button>
+                </div>
               </div>
 
               {/* Google Sign In Button */}
@@ -343,7 +395,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <button
                   type="button"
                   disabled={loading}
-                  onClick={() => handleGoogleSignIn()}
+                  onClick={() => handleGoogleSignIn(initialRoleChoice)}
                   className="w-full flex items-center justify-center gap-3 py-2.5 px-4 bg-white hover:bg-slate-50 text-slate-800 border-2 border-slate-300 hover:border-slate-400 rounded-xl font-bold text-xs shadow-xs transition-all cursor-pointer"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
@@ -352,7 +404,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3s.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12 0 14.5s.7 4.8 1.9 7.2l3.7-2.9z"/>
                     <path fill="#34A853" d="M12 24c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 17C3.7 20.7 7.5 24 12 24z"/>
                   </svg>
-                  <span>{loading ? 'جارٍ تسجيل الدخول...' : 'تسجيل الدخول بواسطة Google Gmail'}</span>
+                  <span>
+                    {loading 
+                      ? 'جارٍ تسجيل الدخول...' 
+                      : `تسجيل الدخول بواسطة Google Gmail كـ (${initialRoleChoice === 'admin' ? 'مدير عام Admin' : 'مشرف خط'})`
+                    }
+                  </span>
                 </button>
               </div>
 

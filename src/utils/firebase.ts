@@ -14,7 +14,6 @@ import {
   doc, 
   getDoc, 
   setDoc, 
-  updateDoc, 
   deleteDoc, 
   collection, 
   onSnapshot, 
@@ -24,7 +23,8 @@ import {
 import firebaseConfig from '../../firebase-applet-config.json';
 import { ProductionLine, Worker, AppUser, UserRole, TerminologyConfig, PlantLeadership } from '../types/matrix';
 
-// Primary Admin configured in applet runtime
+// Pre-approved Admin emails configured in applet runtime
+export const DEFAULT_ADMIN_EMAILS = ['minakhairat1@gmail.com', 'minakhairat2@gmail.com'];
 export const PRIMARY_ADMIN_EMAIL = 'minakhairat1@gmail.com';
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -103,27 +103,79 @@ export async function logoutUser(): Promise<void> {
   await fbSignOut(auth);
 }
 
+// Helper to ensure admin document in /admins/{uid}
+export async function ensureAdminDocument(user: FirebaseUser): Promise<void> {
+  if (!user || !user.uid || !user.email) return;
+  const normalizedEmail = user.email.toLowerCase().trim();
+  try {
+    await setDoc(doc(db, 'admins', user.uid), {
+      uid: user.uid,
+      email: normalizedEmail,
+      role: 'admin',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (e) {
+    console.warn('Could not ensure admin document:', e);
+  }
+}
+
+// Set user role explicitly in Firestore
+export async function setUserRole(
+  user: FirebaseUser, 
+  role: UserRole, 
+  assignedLineIds: string[] = []
+): Promise<void> {
+  if (!user || !user.uid || !user.email) return;
+  const normalizedEmail = user.email.toLowerCase().trim();
+
+  if (role === 'admin') {
+    await ensureAdminDocument(user);
+  } else {
+    // If user changes to supervisor and not in default admin emails list, remove from admins collection
+    if (!DEFAULT_ADMIN_EMAILS.includes(normalizedEmail)) {
+      try {
+        await deleteDoc(doc(db, 'admins', user.uid));
+      } catch (e) {
+        console.warn('Could not remove admin doc on demotion:', e);
+      }
+    }
+  }
+
+  // Update users profile collection
+  try {
+    await setDoc(doc(db, 'users', user.uid), {
+      uid: user.uid,
+      email: normalizedEmail,
+      displayName: user.displayName || user.email || 'مستخدم',
+      role,
+      assignedLineIds,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (e) {
+    console.warn('Could not update user profile:', e);
+  }
+}
+
 // Check admin status
 export async function verifyAdminStatus(user: FirebaseUser): Promise<boolean> {
   if (!user || !user.email) return false;
   const normalizedEmail = user.email.toLowerCase().trim();
-  if (normalizedEmail === PRIMARY_ADMIN_EMAIL.toLowerCase().trim()) {
-    // Ensure document in admins collection exists for rule checks
-    try {
-      await setDoc(doc(db, 'admins', user.uid), {
-        uid: user.uid,
-        email: normalizedEmail,
-        createdAt: new Date().toISOString()
-      }, { merge: true });
-    } catch (e) {
-      // Ignore if rules fail or already exists
-    }
+  if (DEFAULT_ADMIN_EMAILS.includes(normalizedEmail)) {
+    await ensureAdminDocument(user);
     return true;
   }
 
   try {
     const adminDoc = await getDoc(doc(db, 'admins', user.uid));
-    return adminDoc.exists();
+    if (adminDoc.exists()) return true;
+
+    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    if (userDoc.exists() && userDoc.data().role === 'admin') {
+      await ensureAdminDocument(user);
+      return true;
+    }
+    return false;
   } catch (err) {
     return false;
   }
@@ -136,7 +188,7 @@ export async function resolveUserPermissions(
   preferredRole?: UserRole
 ): Promise<AppUser> {
   const normalizedEmail = (user.email || '').toLowerCase().trim();
-  const isPrimary = normalizedEmail === PRIMARY_ADMIN_EMAIL.toLowerCase().trim();
+  const isDefaultAdmin = DEFAULT_ADMIN_EMAILS.includes(normalizedEmail);
   
   // Find lines assigned to this email
   const assigned = lines
@@ -144,18 +196,20 @@ export async function resolveUserPermissions(
     .map(l => l.id);
 
   let role: UserRole = 'supervisor';
-  if (isPrimary) {
+  if (isDefaultAdmin) {
     role = 'admin';
+    await ensureAdminDocument(user);
   } else if (preferredRole === 'admin') {
+    role = 'admin';
+    await ensureAdminDocument(user);
+  } else if (preferredRole === 'supervisor') {
+    role = 'supervisor';
+  } else {
+    // Check if in admins collection or users collection
     const isApprovedAdmin = await verifyAdminStatus(user);
     role = isApprovedAdmin ? 'admin' : 'supervisor';
-  } else {
-    // Check if in admins collection
-    const isApprovedAdmin = await verifyAdminStatus(user);
-    if (isApprovedAdmin && !preferredRole) {
-      role = 'admin';
-    } else {
-      role = 'supervisor';
+    if (role === 'admin') {
+      await ensureAdminDocument(user);
     }
   }
 
@@ -216,8 +270,11 @@ export async function syncFullDatasetToFirestore(data: {
       await setDoc(doc(db, 'lines', line.id), {
         id: line.id,
         name: line.name,
-        supervisorEmail: line.supervisorEmail || '',
+        nameEn: line.nameEn || '',
+        code: line.code || line.id,
+        supervisor: line.supervisor || '',
         supervisorName: line.supervisor || '',
+        supervisorEmail: (line.supervisorEmail || '').toLowerCase().trim(),
         shiftCount: 3,
         models: line.models || [],
         updatedAt: new Date().toISOString(),
@@ -245,6 +302,9 @@ export async function syncFullDatasetToFirestore(data: {
         skills: w.skills,
         performanceRate: 95,
         notes: w.notes || '',
+        hireDate: w.hireDate || '2023-01-01',
+        targetStagesCount: w.targetStagesCount || 3,
+        minProficiencyTarget: w.minProficiencyTarget || 3,
         updatedAt: new Date().toISOString(),
         updatedBy: auth.currentUser?.email || 'admin'
       });
@@ -266,8 +326,11 @@ export async function updateLineInFirestore(line: ProductionLine): Promise<void>
     await setDoc(doc(db, 'lines', line.id), {
       id: line.id,
       name: line.name,
-      supervisorEmail: line.supervisorEmail || '',
+      nameEn: line.nameEn || '',
+      code: line.code || line.id,
+      supervisor: line.supervisor || '',
       supervisorName: line.supervisor || '',
+      supervisorEmail: (line.supervisorEmail || '').toLowerCase().trim(),
       shiftCount: 3,
       models: line.models || [],
       updatedAt: new Date().toISOString(),
@@ -292,6 +355,9 @@ export async function updateWorkerInFirestore(worker: Worker): Promise<void> {
       skills: worker.skills,
       performanceRate: 95,
       notes: worker.notes || '',
+      hireDate: worker.hireDate || '2023-01-01',
+      targetStagesCount: worker.targetStagesCount || 3,
+      minProficiencyTarget: worker.minProficiencyTarget || 3,
       updatedAt: new Date().toISOString(),
       updatedBy: auth.currentUser?.email || 'user'
     }, { merge: true });
@@ -327,10 +393,10 @@ export function setupRealtimeSync(callbacks: {
         loadedLines.push({
           id: d.id || docSnap.id,
           name: d.name || docSnap.id,
-          nameEn: d.name || '',
-          code: d.id || docSnap.id,
-          supervisor: d.supervisorName || '',
-          supervisorEmail: d.supervisorEmail || '',
+          nameEn: d.nameEn || d.name || '',
+          code: d.code || d.id || docSnap.id,
+          supervisor: d.supervisorName || d.supervisor || '',
+          supervisorEmail: (d.supervisorEmail || '').toLowerCase().trim(),
           models: d.models || []
         });
       });
@@ -356,10 +422,10 @@ export function setupRealtimeSync(callbacks: {
           name: d.name || '',
           lineId: d.lineId || '',
           shift: (d.shift as 'A' | 'B' | 'C') || 'A',
-          targetStagesCount: 3,
-          minProficiencyTarget: 3,
+          targetStagesCount: d.targetStagesCount || 3,
+          minProficiencyTarget: d.minProficiencyTarget || 3,
           skills: d.skills || {},
-          hireDate: '2023-01-01',
+          hireDate: d.hireDate || '2023-01-01',
           notes: d.notes || ''
         });
       });
