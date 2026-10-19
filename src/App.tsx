@@ -40,7 +40,12 @@ import {
   syncFullDatasetToFirestore,
   updateWorkerInFirestore,
   deleteWorkerFromFirestore,
-  updateLineInFirestore
+  updateLineInFirestore,
+  deleteLineFromFirestore,
+  clearAllWorkersFromFirestore,
+  saveSupervisorEmailToFirestore,
+  fetchFullDatasetFromFirestore,
+  logoutUser
 } from './utils/firebase';
 import { Bot, MessageSquare, Cloud, ShieldCheck, UserCheck, AlertTriangle, RefreshCw, CheckCircle2, Lock } from 'lucide-react';
 import { GeminiAIChatView } from './components/GeminiAIChatView';

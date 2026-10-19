@@ -90,8 +90,7 @@ service cloud.firestore {
              (!('details' in data) || (data.details is string && data.details.size() <= 2000));
     }
 
-    // Admins Collection:
-    // Any verified user can claim their own admin document when selecting Admin, or existing admins can manage
+    // Admins Collection
     match /admins/{adminId} {
       allow get: if isSignedIn();
       allow list: if isSignedIn();
@@ -101,8 +100,7 @@ service cloud.firestore {
       allow delete: if isVerified() && (request.auth.uid == adminId || isAdmin());
     }
 
-    // Users Collection:
-    // Users can create/update their own profile (name, role, etc.), or admins can manage
+    // Users Collection
     match /users/{userId} {
       allow get: if isSignedIn();
       allow list: if isSignedIn();
@@ -112,9 +110,7 @@ service cloud.firestore {
       allow delete: if isAdmin() || (isVerified() && request.auth.uid == userId);
     }
 
-    // Lines Collection:
-    // Admins can create, update, delete any line.
-    // Line supervisors can update their assigned line.
+    // Lines Collection
     match /lines/{lineId} {
       allow read: if isSignedIn();
       allow create: if (isAdmin() || isVerified()) && isValidId(lineId) && isValidLine(incoming());
@@ -128,28 +124,38 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Workers Collection:
-    // Admins can manage any worker.
-    // Line supervisors can create, update, delete workers assigned to their line.
+    // Workers Collection
     match /workers/{workerId} {
       allow read: if isSignedIn();
       allow create: if isValidId(workerId) && isValidWorker(incoming()) && (
         isAdmin() ||
-        (isVerified() &&
-         exists(/databases/$(database)/documents/lines/$(incoming().lineId)) &&
-         get(/databases/$(database)/documents/lines/$(incoming().lineId)).data.supervisorEmail.lower() == request.auth.token.email.lower())
+        (isVerified() && (
+          (exists(/databases/$(database)/documents/lines/$(incoming().lineId)) &&
+           get(/databases/$(database)/documents/lines/$(incoming().lineId)).data.supervisorEmail.lower() == request.auth.token.email.lower()) ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           'assignedLineIds' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
+           incoming().lineId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.assignedLineIds)
+        ))
       );
       allow update: if isValidId(workerId) && isValidWorker(incoming()) && (
         isAdmin() ||
-        (isVerified() &&
-         exists(/databases/$(database)/documents/lines/$(existing().lineId)) &&
-         get(/databases/$(database)/documents/lines/$(existing().lineId)).data.supervisorEmail.lower() == request.auth.token.email.lower())
+        (isVerified() && (
+          (exists(/databases/$(database)/documents/lines/$(existing().lineId)) &&
+           get(/databases/$(database)/documents/lines/$(existing().lineId)).data.supervisorEmail.lower() == request.auth.token.email.lower()) ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           'assignedLineIds' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
+           existing().lineId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.assignedLineIds)
+        ))
       );
       allow delete: if isValidId(workerId) && (
         isAdmin() ||
-        (isVerified() &&
-         exists(/databases/$(database)/documents/lines/$(existing().lineId)) &&
-         get(/databases/$(database)/documents/lines/$(existing().lineId)).data.supervisorEmail.lower() == request.auth.token.email.lower())
+        (isVerified() && (
+          (exists(/databases/$(database)/documents/lines/$(existing().lineId)) &&
+           get(/databases/$(database)/documents/lines/$(existing().lineId)).data.supervisorEmail.lower() == request.auth.token.email.lower()) ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+           'assignedLineIds' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
+           existing().lineId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.assignedLineIds)
+        ))
       );
     }
 

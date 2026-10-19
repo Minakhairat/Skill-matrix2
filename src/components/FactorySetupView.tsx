@@ -29,7 +29,8 @@ import {
   Users,
   Mail,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  CheckCircle2
 } from 'lucide-react';
 
 interface FactorySetupViewProps {
@@ -46,6 +47,7 @@ interface FactorySetupViewProps {
   leadership: PlantLeadership;
   onUpdateLeadership: (leadership: PlantLeadership) => void;
   currentUser?: AppUser | null;
+  onSaveSupervisorEmail?: (lineId: string, supervisorName: string, supervisorEmail: string) => Promise<void>;
 }
 
 export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
@@ -61,7 +63,8 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
   onUpdateMinQualifiedLevel,
   leadership,
   onUpdateLeadership,
-  currentUser
+  currentUser,
+  onSaveSupervisorEmail
 }) => {
   // Navigation inside Setup View
   const [selectedLineId, setSelectedLineId] = useState<string>(lines[0]?.id || '');
@@ -134,6 +137,56 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
     });
     setLeadershipSaved(true);
     setTimeout(() => setLeadershipSaved(false), 2500);
+  };
+
+  const [supervisorDrafts, setSupervisorDrafts] = useState<Record<string, { supervisor: string; email: string }>>({});
+  const [confirmedLineId, setConfirmedLineId] = useState<string | null>(null);
+  const [confirmFeedback, setConfirmFeedback] = useState<string | null>(null);
+
+  const handleDraftChange = (lineId: string, field: 'supervisor' | 'email', val: string) => {
+    const current = lines.find(l => l.id === lineId);
+    setSupervisorDrafts(prev => ({
+      ...prev,
+      [lineId]: {
+        supervisor: field === 'supervisor' ? val : (prev[lineId]?.supervisor ?? current?.supervisor ?? ''),
+        email: field === 'email' ? val : (prev[lineId]?.email ?? current?.supervisorEmail ?? '')
+      }
+    }));
+  };
+
+  const handleConfirmSupervisor = async (lineId: string) => {
+    const current = lines.find(l => l.id === lineId);
+    if (!current) return;
+    const draft = supervisorDrafts[lineId] || { supervisor: current.supervisor, email: current.supervisorEmail || '' };
+    const supName = (draft.supervisor !== undefined ? draft.supervisor : current.supervisor || '').trim();
+    const supEmail = (draft.email !== undefined ? draft.email : current.supervisorEmail || '').trim().toLowerCase();
+
+    const updated = lines.map(l => {
+      if (l.id === lineId) {
+        return {
+          ...l,
+          supervisor: supName || l.supervisor,
+          supervisorEmail: supEmail
+        };
+      }
+      return l;
+    });
+    onUpdateLines(updated);
+
+    if (onSaveSupervisorEmail) {
+      try {
+        await onSaveSupervisorEmail(lineId, supName, supEmail);
+      } catch (e) {
+        console.warn('Could not save supervisor email to Firestore:', e);
+      }
+    }
+
+    setConfirmedLineId(lineId);
+    setConfirmFeedback(`تم اعتماد المشرف (${supName || 'مشرف'}) والبريد (${supEmail || 'غير محدد'}) للـ ${current.name} بنجاح وحفظه في السحابة ✓`);
+    setTimeout(() => {
+      setConfirmedLineId(null);
+      setConfirmFeedback(null);
+    }, 4000);
   };
 
   const handleUpdateLineSupervisor = (lineId: string, supervisor: string, email?: string) => {
@@ -651,45 +704,73 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
               <span>مشرفو الـ {terminology.lineLabelPlural} والماكينات المسجلون:</span>
               <span className="text-[10px] text-slate-500">({lines.length} {terminology.lineLabelPlural})</span>
             </h3>
-            <span className="text-[10px] text-slate-500">
-              تعديل مباشر: اكتب اسم المشرف وسيحفظ تلقائياً
+            <span className="text-[10px] text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+              اضغط زر (تأكيد وتسجيل إيميل المشرف) لحفظ الصلاحية سحابياً
             </span>
           </div>
+
+          {confirmFeedback && (
+            <div className="mb-3 p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 text-xs flex items-center gap-2 animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span className="font-bold">{confirmFeedback}</span>
+            </div>
+          )}
           
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-            {lines.map((ln) => (
-              <div key={ln.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900 truncate">{ln.name}</span>
-                  <span className="font-mono text-[10px] text-slate-500">{ln.code}</span>
-                </div>
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-slate-500 shrink-0 w-16">المشرف:</span>
-                    <input
-                      type="text"
-                      defaultValue={ln.supervisor}
-                      onBlur={(e) => handleUpdateLineSupervisor(ln.id, e.target.value, ln.supervisorEmail)}
-                      placeholder="اسم المشرف المسؤول"
-                      className="flex-1 px-2 py-1 text-xs bg-white border border-slate-300 rounded text-slate-900 focus:ring-1 focus:ring-purple-500"
-                    />
+            {lines.map((ln) => {
+              const currentDraft = supervisorDrafts[ln.id];
+              const supVal = currentDraft?.supervisor !== undefined ? currentDraft.supervisor : ln.supervisor;
+              const emailVal = currentDraft?.email !== undefined ? currentDraft.email : (ln.supervisorEmail || '');
+              const isConfirmed = confirmedLineId === ln.id;
+
+              return (
+                <div key={ln.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2.5 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 truncate">{ln.name}</span>
+                    <span className="font-mono text-[10px] text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">{ln.code}</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-indigo-600 font-semibold shrink-0 w-16 flex items-center gap-0.5">
-                      <Mail className="w-2.5 h-2.5" />
-                      <span>جيميل:</span>
-                    </span>
-                    <input
-                      type="email"
-                      defaultValue={ln.supervisorEmail || ''}
-                      onBlur={(e) => handleUpdateLineSupervisor(ln.id, ln.supervisor, e.target.value)}
-                      placeholder="supervisor@gmail.com"
-                      className="flex-1 px-2 py-1 text-[11px] font-mono bg-white border border-slate-300 rounded text-slate-900 focus:ring-1 focus:ring-indigo-500"
-                    />
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-500 shrink-0 w-14">المشرف:</span>
+                      <input
+                        type="text"
+                        value={supVal}
+                        onChange={(e) => handleDraftChange(ln.id, 'supervisor', e.target.value)}
+                        placeholder="اسم المشرف المسؤول"
+                        className="flex-1 px-2 py-1 text-xs bg-white border border-slate-300 rounded text-slate-900 focus:ring-1 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-indigo-600 font-semibold shrink-0 w-14 flex items-center gap-0.5">
+                        <Mail className="w-2.5 h-2.5" />
+                        <span>جيميل:</span>
+                      </span>
+                      <input
+                        type="email"
+                        value={emailVal}
+                        onChange={(e) => handleDraftChange(ln.id, 'email', e.target.value)}
+                        placeholder="supervisor@gmail.com"
+                        className="flex-1 px-2 py-1 text-[11px] font-mono bg-white border border-slate-300 rounded text-slate-900 focus:ring-1 focus:ring-indigo-500 dir-ltr text-right"
+                      />
+                    </div>
                   </div>
+
+                  {/* Confirmation Button for Supervisor Email */}
+                  <button
+                    type="button"
+                    onClick={() => handleConfirmSupervisor(ln.id)}
+                    className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs ${
+                      isConfirmed
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{isConfirmed ? 'تم تأكيد وحفظ الإيميل في السحابة ✓' : 'تأكيد وتسجيل إيميل المشرف'}</span>
+                  </button>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

@@ -13,9 +13,12 @@ import {
   getFirestore, 
   doc, 
   getDoc, 
+  getDocs,
   setDoc, 
   deleteDoc, 
   collection, 
+  query,
+  where,
   onSnapshot, 
   getDocFromServer,
   writeBatch
@@ -181,7 +184,7 @@ export async function verifyAdminStatus(user: FirebaseUser): Promise<boolean> {
   }
 }
 
-// Resolve user role and assigned lines
+// Resolve user role and assigned lines - querying Firestore directly so supervisor lines are always accurate
 export async function resolveUserPermissions(
   user: FirebaseUser,
   lines: ProductionLine[],
@@ -190,10 +193,49 @@ export async function resolveUserPermissions(
   const normalizedEmail = (user.email || '').toLowerCase().trim();
   const isDefaultAdmin = DEFAULT_ADMIN_EMAILS.includes(normalizedEmail);
   
-  // Find lines assigned to this email
-  const assigned = lines
-    .filter(l => (l.supervisorEmail || '').toLowerCase().trim() === normalizedEmail)
-    .map(l => l.id);
+  // 1. Gather assigned line IDs from Firestore directly
+  const assignedSet = new Set<string>();
+
+  try {
+    const linesSnap = await getDocs(collection(db, 'lines'));
+    linesSnap.forEach(d => {
+      const data = d.data();
+      const supEmail = (data.supervisorEmail || '').toLowerCase().trim();
+      if (supEmail && supEmail === normalizedEmail) {
+        assignedSet.add(d.id);
+      }
+    });
+  } catch (e) {
+    console.warn('Could not read lines collection in resolveUserPermissions:', e);
+  }
+
+  // Also check provided lines in memory
+  if (lines && lines.length > 0) {
+    lines.forEach(l => {
+      if ((l.supervisorEmail || '').toLowerCase().trim() === normalizedEmail) {
+        assignedSet.add(l.id);
+      }
+    });
+  }
+
+  // Also check existing user document in Firestore to retain any pre-assigned line IDs
+  let existingUserRole: UserRole | undefined;
+  try {
+    const uDoc = await getDoc(doc(db, 'users', user.uid));
+    if (uDoc.exists()) {
+      const uData = uDoc.data();
+      if (Array.isArray(uData.assignedLineIds)) {
+        uData.assignedLineIds.forEach((id: string) => assignedSet.add(id));
+      }
+      if (uData.role) {
+        existingUserRole = uData.role as UserRole;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not read user doc in resolveUserPermissions:', e);
+  }
+
+  const assigned = Array.from(assignedSet);
 
   let role: UserRole = 'supervisor';
   if (isDefaultAdmin) {
@@ -204,8 +246,10 @@ export async function resolveUserPermissions(
     await ensureAdminDocument(user);
   } else if (preferredRole === 'supervisor') {
     role = 'supervisor';
+  } else if (existingUserRole === 'admin') {
+    role = 'admin';
+    await ensureAdminDocument(user);
   } else {
-    // Check if in admins collection or users collection
     const isApprovedAdmin = await verifyAdminStatus(user);
     role = isApprovedAdmin ? 'admin' : 'supervisor';
     if (role === 'admin') {
@@ -236,6 +280,136 @@ export async function resolveUserPermissions(
   }
 
   return appUser;
+}
+
+// Fetch complete dataset from Firestore on login or restore
+export async function fetchFullDatasetFromFirestore(): Promise<{
+  lines: ProductionLine[];
+  workers: Worker[];
+  settings?: {
+    targetWorkersPerStage: number;
+    targetStagesPerWorker: number;
+    minQualifiedLevel: number;
+  };
+  terminology?: TerminologyConfig;
+  leadership?: PlantLeadership;
+  hasData: boolean;
+}> {
+  const result: {
+    lines: ProductionLine[];
+    workers: Worker[];
+    settings?: any;
+    terminology?: TerminologyConfig;
+    leadership?: PlantLeadership;
+    hasData: boolean;
+  } = {
+    lines: [],
+    workers: [],
+    hasData: false
+  };
+
+  try {
+    // 1. Fetch lines
+    const linesSnap = await getDocs(collection(db, 'lines'));
+    if (!linesSnap.empty) {
+      const loadedLines: ProductionLine[] = [];
+      linesSnap.forEach(docSnap => {
+        const d = docSnap.data();
+        loadedLines.push({
+          id: d.id || docSnap.id,
+          name: d.name || docSnap.id,
+          nameEn: d.nameEn || d.name || '',
+          code: d.code || d.id || docSnap.id,
+          supervisor: d.supervisorName || d.supervisor || '',
+          supervisorEmail: (d.supervisorEmail || '').toLowerCase().trim(),
+          models: d.models || []
+        });
+      });
+      loadedLines.sort((a, b) => a.id.localeCompare(b.id));
+      result.lines = loadedLines;
+    }
+
+    // 2. Fetch workers
+    const workersSnap = await getDocs(collection(db, 'workers'));
+    if (!workersSnap.empty) {
+      const loadedWorkers: Worker[] = [];
+      workersSnap.forEach(docSnap => {
+        const d = docSnap.data();
+        loadedWorkers.push({
+          id: d.id || docSnap.id,
+          empCode: d.code || docSnap.id,
+          name: d.name || '',
+          lineId: d.lineId || '',
+          shift: (d.shift as 'A' | 'B' | 'C') || 'A',
+          targetStagesCount: d.targetStagesCount || 3,
+          minProficiencyTarget: d.minProficiencyTarget || 3,
+          skills: d.skills || {},
+          hireDate: d.hireDate || '2023-01-01',
+          notes: d.notes || ''
+        });
+      });
+      result.workers = loadedWorkers;
+    }
+
+    // 3. Fetch settings
+    const settingsSnap = await getDoc(doc(db, 'settings', 'plant_config'));
+    if (settingsSnap.exists()) {
+      const d = settingsSnap.data();
+      result.settings = {
+        targetWorkersPerStage: d.targetWorkersPerStage,
+        targetStagesPerWorker: d.targetStagesPerWorker,
+        minQualifiedLevel: d.minQualifiedLevel
+      };
+      if (d.terminology) result.terminology = d.terminology;
+      if (d.leadership) result.leadership = d.leadership;
+    }
+
+    result.hasData = result.lines.length > 0 || result.workers.length > 0;
+  } catch (error) {
+    console.warn('Could not fetch dataset from Firestore:', error);
+  }
+
+  return result;
+}
+
+// Dedicated function to confirm and save supervisor email to Firestore
+export async function saveSupervisorEmailToFirestore(
+  lineId: string, 
+  supervisorName: string, 
+  supervisorEmail: string
+): Promise<void> {
+  const normalizedEmail = (supervisorEmail || '').toLowerCase().trim();
+  const path = `lines/${lineId}`;
+
+  try {
+    await setDoc(doc(db, 'lines', lineId), {
+      supervisorName: supervisorName.trim(),
+      supervisorEmail: normalizedEmail,
+      updatedAt: new Date().toISOString(),
+      updatedBy: auth.currentUser?.email || 'admin'
+    }, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+
+  // Update or link the user in users collection if exists
+  if (normalizedEmail) {
+    try {
+      const usersSnap = await getDocs(query(collection(db, 'users'), where('email', '==', normalizedEmail)));
+      usersSnap.forEach(async (uDoc) => {
+        const uData = uDoc.data();
+        const existingLines: string[] = Array.isArray(uData.assignedLineIds) ? uData.assignedLineIds : [];
+        if (!existingLines.includes(lineId)) {
+          await setDoc(doc(db, 'users', uDoc.id), {
+            assignedLineIds: [...existingLines, lineId],
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        }
+      });
+    } catch (e) {
+      console.warn('Could not link supervisor user doc:', e);
+    }
+  }
 }
 
 // Push local dataset to Firestore (Admin action)
@@ -341,6 +515,16 @@ export async function updateLineInFirestore(line: ProductionLine): Promise<void>
   }
 }
 
+// Single line deletion
+export async function deleteLineFromFirestore(lineId: string): Promise<void> {
+  const path = `lines/${lineId}`;
+  try {
+    await deleteDoc(doc(db, 'lines', lineId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
 // Single worker update
 export async function updateWorkerInFirestore(worker: Worker): Promise<void> {
   const path = `workers/${worker.id}`;
@@ -376,6 +560,36 @@ export async function deleteWorkerFromFirestore(workerId: string): Promise<void>
   }
 }
 
+// Batch deletion of workers from Firestore (e.g. clear all workers or clear a line's workers)
+export async function clearAllWorkersFromFirestore(lineId?: string): Promise<number> {
+  try {
+    let workersQuery = collection(db, 'workers');
+    let snapshot;
+    if (lineId) {
+      snapshot = await getDocs(query(workersQuery, where('lineId', '==', lineId)));
+    } else {
+      snapshot = await getDocs(workersQuery);
+    }
+
+    if (snapshot.empty) return 0;
+
+    const docsToDelete = snapshot.docs;
+    const BATCH_SIZE = 400;
+    for (let i = 0; i < docsToDelete.length; i += BATCH_SIZE) {
+      const chunk = docsToDelete.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+      for (const d of chunk) {
+        batch.delete(d.ref);
+      }
+      await batch.commit();
+    }
+
+    return docsToDelete.length;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, 'workers (batch delete)');
+  }
+}
+
 // Real-time listener for plant lines and workers
 export function setupRealtimeSync(callbacks: {
   onLinesUpdate: (lines: ProductionLine[]) => void;
@@ -386,7 +600,10 @@ export function setupRealtimeSync(callbacks: {
   const unsubLines = onSnapshot(
     collection(db, 'lines'),
     snapshot => {
-      if (snapshot.empty) return;
+      if (snapshot.empty) {
+        // If snapshot is empty, don't overwrite if local has default lines unless user deleted all
+        return;
+      }
       const loadedLines: ProductionLine[] = [];
       snapshot.forEach(docSnap => {
         const d = docSnap.data();
@@ -412,23 +629,25 @@ export function setupRealtimeSync(callbacks: {
   const unsubWorkers = onSnapshot(
     collection(db, 'workers'),
     snapshot => {
-      if (snapshot.empty) return;
       const loadedWorkers: Worker[] = [];
-      snapshot.forEach(docSnap => {
-        const d = docSnap.data();
-        loadedWorkers.push({
-          id: d.id || docSnap.id,
-          empCode: d.code || docSnap.id,
-          name: d.name || '',
-          lineId: d.lineId || '',
-          shift: (d.shift as 'A' | 'B' | 'C') || 'A',
-          targetStagesCount: d.targetStagesCount || 3,
-          minProficiencyTarget: d.minProficiencyTarget || 3,
-          skills: d.skills || {},
-          hireDate: d.hireDate || '2023-01-01',
-          notes: d.notes || ''
+      if (!snapshot.empty) {
+        snapshot.forEach(docSnap => {
+          const d = docSnap.data();
+          loadedWorkers.push({
+            id: d.id || docSnap.id,
+            empCode: d.code || docSnap.id,
+            name: d.name || '',
+            lineId: d.lineId || '',
+            shift: (d.shift as 'A' | 'B' | 'C') || 'A',
+            targetStagesCount: d.targetStagesCount || 3,
+            minProficiencyTarget: d.minProficiencyTarget || 3,
+            skills: d.skills || {},
+            hireDate: d.hireDate || '2023-01-01',
+            notes: d.notes || ''
+          });
         });
-      });
+      }
+      // When snapshot changes (even to empty after deletion), emit the loaded workers list!
       callbacks.onWorkersUpdate(loadedWorkers);
     },
     error => {

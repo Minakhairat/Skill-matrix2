@@ -26,6 +26,7 @@ interface AuthModalProps {
   lines: ProductionLine[];
   onSyncAllToCloud?: () => Promise<void>;
   isSyncing?: boolean;
+  onSignOut?: () => Promise<void>;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -35,7 +36,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onUserChange,
   lines,
   onSyncAllToCloud,
-  isSyncing = false
+  isSyncing = false,
+  onSignOut
 }) => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -136,8 +138,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleSignOut = async () => {
     try {
       setLoading(true);
-      await logoutUser();
-      onUserChange(null);
+      if (onSignOut) {
+        await onSignOut();
+      } else {
+        await logoutUser();
+        onUserChange(null);
+      }
       onClose();
     } catch (e: any) {
       setErrorMsg('حدث خطأ أثناء تسجيل الخروج');
