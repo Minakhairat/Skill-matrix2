@@ -10,7 +10,10 @@ import {
   CheckCircle2, 
   RefreshCw,
   Mail,
-  User
+  User,
+  Copy,
+  ExternalLink,
+  Globe
 } from 'lucide-react';
 import { ProductionLine, AppUser, UserRole } from '../types/matrix';
 import { loginWithGoogle, logoutUser, DEFAULT_ADMIN_EMAILS, auth, setUserRole } from '../utils/firebase';
@@ -38,13 +41,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [initialRoleChoice, setInitialRoleChoice] = useState<UserRole>('admin');
+  const [isUnauthorizedDomain, setIsUnauthorizedDomain] = useState(false);
+  const [domainCopied, setDomainCopied] = useState(false);
+
+  const currentHostname = typeof window !== 'undefined' ? (window.location.hostname || 'minakhairat.github.io') : 'minakhairat.github.io';
+  const firebaseSettingsUrl = 'https://console.firebase.google.com/project/gen-lang-client-0761904551/authentication/settings';
 
   if (!isOpen) return null;
+
+  const handleCopyDomain = () => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(currentHostname);
+      setDomainCopied(true);
+      setTimeout(() => setDomainCopied(false), 2000);
+    }
+  };
 
   const handleGoogleSignIn = async (roleChoice: UserRole = initialRoleChoice) => {
     try {
       setLoading(true);
       setErrorMsg(null);
+      setIsUnauthorizedDomain(false);
       const user = await loginWithGoogle();
       const normalizedEmail = (user.email || '').toLowerCase().trim();
       const isDefaultAdmin = DEFAULT_ADMIN_EMAILS.includes(normalizedEmail);
@@ -76,7 +93,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }, 1500);
     } catch (err: any) {
       console.error('Login error:', err);
-      setErrorMsg(err?.message || 'تعذر تسجيل الدخول بواسطة Google. يرجى المحاولة مجدداً.');
+      const isUnauth = err?.code === 'auth/unauthorized-domain' || 
+                       String(err?.message || '').toLowerCase().includes('unauthorized-domain');
+      setIsUnauthorizedDomain(isUnauth);
+      if (isUnauth) {
+        setErrorMsg(`النطاق (${currentHostname}) غير مضاف في قائمة النطاقات المصرح بها في إعدادات Firebase Authentication.`);
+      } else {
+        setErrorMsg(err?.message || 'تعذر تسجيل الدخول بواسطة Google. يرجى المحاولة مجدداً.');
+      }
     } finally {
       setLoading(false);
     }
@@ -159,6 +183,54 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <span>{errorMsg}</span>
           </div>
         )}
+
+        {isUnauthorizedDomain && (
+          <div className="p-3.5 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs space-y-2.5">
+            <div className="flex items-start gap-2">
+              <Globe className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-amber-950">كيفية تفعيل تسجيل الدخول على GitHub Pages (خطوة واحدة):</div>
+                <p className="text-[11px] text-amber-800 leading-relaxed mt-0.5">
+                  من أجل الأمان، يتطلب Firebase إضافة رابط موقعك في قائمة <strong>Authorized Domains</strong> مرة واحدة فقط:
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white/90 p-2.5 rounded-lg border border-amber-200/80 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-slate-600 font-bold">الدومين المطلوب إضافته:</span>
+                <button
+                  type="button"
+                  onClick={handleCopyDomain}
+                  className="flex items-center gap-1 px-2 py-0.5 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded text-[11px] font-bold transition-colors cursor-pointer"
+                >
+                  <Copy className="w-3 h-3" />
+                  <span>{domainCopied ? 'تم النسخ!' : 'نسخ الدومين'}</span>
+                </button>
+              </div>
+              <div className="font-mono text-xs font-bold text-indigo-700 bg-slate-50 px-2 py-1 rounded border border-slate-200 text-center dir-ltr select-all">
+                {currentHostname}
+              </div>
+            </div>
+
+            <div className="space-y-1 text-[11px] text-amber-900 pr-1">
+              <div>1. اضغط على الزر أدناه لفتح صفحة إعدادات Firebase Console الخاصة بمشروعك.</div>
+              <div>2. في قسم <strong>Authorized domains</strong>، اضغط <strong>Add domain</strong>.</div>
+              <div>3. الصق <code className="font-mono text-indigo-800 bg-white px-1 rounded">{currentHostname}</code> ثم اضغط <strong>Save</strong>.</div>
+            </div>
+
+            <a
+              href={firebaseSettingsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-1.5 w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs transition-colors shadow-xs"
+            >
+              <span>فتح صفحة إعدادات Firebase Console</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+        )}
+
         {successMsg && (
           <div className="p-3 bg-emerald-50 border-b border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
