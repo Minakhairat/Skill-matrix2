@@ -26,12 +26,15 @@ import {
   RotateCcw,
   Sliders,
   Filter,
-  MessageSquare
+  MessageSquare,
+  Key
 } from 'lucide-react';
 import { Worker, Stage, ProductionLine, Model, PlantLeadership, TerminologyConfig, IndustrialProblemCategory, ProblemSolutionResult } from '../types/matrix';
 import { calculateStageMetric, calculateWorkerFlexibility } from '../utils/matrixCalculations';
 import { generateIndustrialAIAdvice, AIAdviceResponse, solveIndustrialProblem } from '../utils/industrialAISolver';
 import { formatUnitName, formatSubUnitName } from '../utils/constants';
+import { sendAdvisorQueryUnified, getClientGeminiApiKey, isStaticDeployment } from '../utils/geminiService';
+import { GeminiApiKeyModal } from './GeminiApiKeyModal';
 import { GeminiAIChatView } from './GeminiAIChatView';
 
 interface AIAdvisorViewProps {
@@ -84,6 +87,8 @@ export const AIAdvisorView: React.FC<AIAdvisorViewProps> = ({
   const [copiedAdvice, setCopiedAdvice] = useState(false);
   const [advice, setAdvice] = useState<AIAdviceResponse | null>(null);
   const [adviceAiSource, setAdviceAiSource] = useState<'gemini' | 'industrial_engine'>('industrial_engine');
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [hasClientKey, setHasClientKey] = useState<boolean>(() => Boolean(getClientGeminiApiKey()));
 
   // Calculate live stage metrics
   const stageMetrics = stages.map(s => calculateStageMetric(s, lineWorkers));
@@ -218,44 +223,36 @@ export const AIAdvisorView: React.FC<AIAdvisorViewProps> = ({
         .map(w => ({ name: w.name, code: w.empCode, shift: w.shift, level: w.skills[stageId] }))
     };
 
-    // Try server-side Gemini first
+    // Try Gemini (via unified service: server route or direct client-side Gemini API)
     try {
-      const response = await fetch('/api/ai-advisor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: `تشخيص وحل مشكلة صناعية:\nنوع المشكلة: ${cat}\nالمستوى: ${sev}\nالوردية: ${shift}\nالمرحلة/المحطة: ${targetStageObj?.name}\nتفاصيل المشكلة:\n${text}`,
-          context: contextData
-        })
+      const aiResponse = await sendAdvisorQueryUnified({
+        prompt: `تشخيص وحل مشكلة صناعية:\nنوع المشكلة: ${cat}\nالمستوى: ${sev}\nالوردية: ${shift}\nالمرحلة/المحطة: ${targetStageObj?.name}\nتفاصيل المشكلة:\n${text}`,
+        context: contextData
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.text && !data.fallback) {
-          // Adapt deterministic base result and enrich with Gemini's detailed text
-          const baseResult = solveIndustrialProblem({
-            problemDescription: text,
-            category: cat,
-            severity: sev,
-            line,
-            model,
-            stages,
-            workers: lineWorkers,
-            leadership,
-            affectedStageId: stageId,
-            affectedShift: shift
-          });
+      if (aiResponse && aiResponse.text) {
+        const baseResult = solveIndustrialProblem({
+          problemDescription: text,
+          category: cat,
+          severity: sev,
+          line,
+          model,
+          stages,
+          workers: lineWorkers,
+          leadership,
+          affectedStageId: stageId,
+          affectedShift: shift
+        });
 
-          baseResult.summary = data.text.slice(0, 450) + '...';
-          baseResult.aiExecutiveNote = data.text;
-          setProblemResult(baseResult);
-          setProblemAiSource('gemini');
-          setIsProblemLoading(false);
-          return;
-        }
+        baseResult.summary = aiResponse.text.slice(0, 450) + '...';
+        baseResult.aiExecutiveNote = aiResponse.text;
+        setProblemResult(baseResult);
+        setProblemAiSource('gemini');
+        setIsProblemLoading(false);
+        return;
       }
     } catch (e) {
-      // Graceful fallback
+      // Fall through to algorithmic engine
     }
 
     // Fallback deterministic solver
@@ -313,34 +310,27 @@ export const AIAdvisorView: React.FC<AIAdvisorViewProps> = ({
     };
 
     try {
-      const response = await fetch('/api/ai-advisor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: promptText,
-          context: contextData
-        })
+      const aiResponse = await sendAdvisorQueryUnified({
+        prompt: promptText,
+        context: contextData
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.text && !data.fallback) {
-          const baseAdvice = generateIndustrialAIAdvice({
-            query: promptText,
-            line,
-            model,
-            stages,
-            workers: lineWorkers,
-            leadership,
-            selectedStageId: activeStageId || undefined
-          });
-          baseAdvice.summary = data.text.slice(0, 500) + '...';
-          baseAdvice.engineerRecommendation = data.text;
-          setAdvice(baseAdvice);
-          setAdviceAiSource('gemini');
-          setIsLoading(false);
-          return;
-        }
+      if (aiResponse && aiResponse.text) {
+        const baseAdvice = generateIndustrialAIAdvice({
+          query: promptText,
+          line,
+          model,
+          stages,
+          workers: lineWorkers,
+          leadership,
+          selectedStageId: activeStageId || undefined
+        });
+        baseAdvice.summary = aiResponse.text.slice(0, 500) + '...';
+        baseAdvice.engineerRecommendation = aiResponse.text;
+        setAdvice(baseAdvice);
+        setAdviceAiSource('gemini');
+        setIsLoading(false);
+        return;
       }
     } catch (e) {}
 
@@ -452,6 +442,20 @@ ${problemResult.aiExecutiveNote}
           >
             <Bot className="w-3.5 h-3.5 text-indigo-300" />
             <span>المستشار العام والموازنة</span>
+          </button>
+
+          {/* Gemini API Key Button for GitHub Pages */}
+          <button
+            onClick={() => setIsApiKeyModalOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 ${
+              hasClientKey
+                ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300 hover:bg-emerald-500/30'
+                : 'bg-amber-500/20 border-amber-400/40 text-amber-300 hover:bg-amber-500/30'
+            }`}
+            title="إعدادات اتصال Google Gemini AI لنسخة GitHub Pages"
+          >
+            <Key className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{hasClientKey ? 'Gemini مفعل' : 'تفعيل Gemini'}</span>
           </button>
         </div>
       </div>
@@ -973,6 +977,12 @@ ${problemResult.aiExecutiveNote}
         </div>
       )}
 
+      {/* Gemini API Key Modal for GitHub Pages */}
+      <GeminiApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
+        onKeyUpdated={() => setHasClientKey(Boolean(getClientGeminiApiKey()))}
+      />
     </div>
   );
 };

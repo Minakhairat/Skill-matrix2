@@ -15,12 +15,29 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
-// Initialize Google GenAI client with telemetry header as required by AI Studio guidelines
-const apiKey = process.env.GEMINI_API_KEY;
-let ai: GoogleGenAI | null = null;
-if (apiKey) {
-  ai = new GoogleGenAI({
-    apiKey,
+// Enable CORS for external static hosts (like GitHub Pages)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-gemini-api-key');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+// Helper to get GoogleGenAI client (prefers client-provided key if supplied, or server environment key)
+function getGenAIClient(clientKey?: string): GoogleGenAI | null {
+  const keyToUse = (clientKey && clientKey.trim()) || process.env.GEMINI_API_KEY;
+  if (!keyToUse) return null;
+  const cleanKey = keyToUse
+    .trim()
+    .replace(/^(?:GEMINI_API_KEY|API_KEY)\s*[:=]\s*/i, '')
+    .replace(/^["'`]|["'`]$/g, '')
+    .replace(/^Bearer\s+/i, '')
+    .trim();
+  return new GoogleGenAI({
+    apiKey: cleanKey,
     httpOptions: {
       headers: {
         'User-Agent': 'aistudio-build',
@@ -28,6 +45,47 @@ if (apiKey) {
     },
   });
 }
+
+// Endpoint to test an API key from the server side (bypassing browser CORS or adblockers)
+app.post('/api/test-key', async (req, res) => {
+  try {
+    const rawKey = req.body?.apiKey || (req.headers['x-gemini-api-key'] as string) || process.env.GEMINI_API_KEY;
+    if (!rawKey) {
+      return res.status(400).json({ success: false, message: 'مفتاح الـ API فارغ أو غير موجود' });
+    }
+    const cleanKey = String(rawKey)
+      .trim()
+      .replace(/^(?:GEMINI_API_KEY|API_KEY)\s*[:=]\s*/i, '')
+      .replace(/^["'`]|["'`]$/g, '')
+      .replace(/^Bearer\s+/i, '')
+      .trim();
+
+    const testAi = new GoogleGenAI({
+      apiKey: cleanKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+    });
+
+    const response = await testAi.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: 'أجب بكلمة "جاهز" فقط لتأكيد الاتصال باللغة العربية.',
+    });
+
+    return res.json({
+      success: true,
+      message: `تم التحقق بنجاح! المفتاح يعمل بشكل ممتاز مع موديل gemini-2.5-flash. الرد: ${response.text?.trim() || 'جاهز'}`,
+      model: 'gemini-2.5-flash'
+    });
+  } catch (error: any) {
+    console.error('Test Key Server Error:', error);
+    const msg = error?.message || 'تعذر التحقق من المفتاح';
+    return res.json({
+      success: false,
+      message: msg.includes('API key not valid')
+        ? 'المفتاح غير صالح (API key not valid). يرجى التأكد من نسخه بدقة من Google AI Studio.'
+        : `خطأ من Google: ${msg}`
+    });
+  }
+});
 
 // AI Advisor Endpoint grounded in live matrix data
 app.post('/api/ai-advisor', async (req, res) => {
@@ -37,10 +95,13 @@ app.post('/api/ai-advisor', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    if (!ai) {
+    const clientKey = (req.headers['x-gemini-api-key'] as string) || req.body?.apiKey;
+    const effectiveAi = getGenAIClient(clientKey);
+
+    if (!effectiveAi) {
       return res.status(200).json({
         fallback: true,
-        message: 'No GEMINI_API_KEY configured on server. Switching to embedded industrial algorithmic engine.',
+        message: 'No GEMINI_API_KEY configured. Switching to embedded industrial algorithmic engine.',
       });
     }
 
@@ -62,7 +123,7 @@ ${JSON.stringify(context, null, 2)}
 سؤال أو مشكلة المستخدم للتشخيص والحل:
 ${prompt}`;
 
-    const response = await ai.models.generateContent({
+    const response = await effectiveAi.models.generateContent({
       model: 'gemini-3.8-flash',
       contents: fullPrompt,
       config: {
@@ -96,7 +157,10 @@ app.post('/api/ai-chat', async (req, res) => {
       ? model
       : 'gemini-3.8-flash';
 
-    if (!ai) {
+    const clientKey = (req.headers['x-gemini-api-key'] as string) || req.body?.apiKey;
+    const effectiveAi = getGenAIClient(clientKey);
+
+    if (!effectiveAi) {
       const lastMessage = messages[messages.length - 1]?.content || '';
       const fallbackReply = generateFallbackChatResponse(lastMessage, context);
       return res.json({
@@ -131,7 +195,7 @@ ${JSON.stringify(context || {}, null, 2)}
       parts: [{ text: String(m.content || '') }]
     }));
 
-    const response = await ai.models.generateContent({
+    const response = await effectiveAi.models.generateContent({
       model: validModel,
       contents,
       config: {
