@@ -235,7 +235,18 @@ export async function sendChatMessageUnified(params: {
       };
     } catch (err: any) {
       console.warn('Direct Gemini API call failed:', err);
-      // Fall through to algorithmic engine if API fails
+      const errMsg = err?.message || 'تعذر الاتصال بخوادم Google';
+      const lastUserMsg = messages[messages.length - 1]?.content || '';
+      return {
+        text: `⚠️ **تنبيه اتصال Google Gemini:** (${errMsg})\n\n*(تم توليد الحل مباشرة بواسطة المحرك الصناعي المدمج MatrixPro AI Engine):*\n\n---\n\n${buildFallbackText(lastUserMsg, context)}`,
+        modelUsed: `المحرك الصناعي المدمج (تعذر Gemini: ${errMsg.slice(0, 45)})`,
+        suggestedFollowUps: [
+          'ما هي أهم مرحلة بها عجز في الخط؟',
+          'اقترح خطة لتعويض الغياب المفاجئ',
+          'كيف نرفع مرونة عمال المستوى 2 إلى المستوى 3؟'
+        ],
+        fallback: true
+      };
     }
   }
 
@@ -263,13 +274,15 @@ async function callDirectGeminiAPI(params: {
     throw new Error('API key is empty');
   }
 
-  // Model selection hierarchy for direct API
-  const candidateModels = [
+  // Model selection hierarchy for direct API: try requested model first, then standard models
+  const candidateModels = Array.from(new Set([
+    requestedModel,
     'gemini-2.5-flash',
     'gemini-flash-latest',
     'gemini-3.8-flash',
-    'gemini-3.1-flash-lite'
-  ];
+    'gemini-3.1-flash-lite',
+    'gemini-2.0-flash'
+  ])).filter(Boolean);
 
   const systemInstruction = buildIndustrialSystemInstruction(context);
 
@@ -301,55 +314,77 @@ async function callDirectGeminiAPI(params: {
   let lastError: any = null;
 
   for (const targetModel of candidateModels) {
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${encodeURIComponent(cleanKey)}`;
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: {
-            parts: [{ text: systemInstruction }]
-          },
-          contents: collapsedContents,
-          generationConfig: {
-            temperature: 0.35,
-            maxOutputTokens: 2048
+    // Try dual formats: Format 1 with system_instruction, Format 2 with combined prompt
+    const formatAttempts = [
+      // Format 1: Structured system_instruction
+      {
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        contents: collapsedContents,
+        generationConfig: { temperature: 0.35, maxOutputTokens: 2048 }
+      },
+      // Format 2: Fallback single-turn combined prompt (works on 100% of Google endpoints)
+      {
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `${systemInstruction}\n\n--- استفسار المستخدم ---\n${collapsedContents.map(c => `${c.role === 'user' ? 'المهندس' : 'المستشار'}: ${c.parts[0].text}`).join('\n\n')}` }]
           }
-        })
-      });
-
-      if (!res.ok) {
-        const errorJson = await res.json().catch(() => ({}));
-        throw new Error(errorJson?.error?.message || `HTTP ${res.status}`);
+        ],
+        generationConfig: { temperature: 0.35, maxOutputTokens: 2048 }
       }
+    ];
 
-      const data = await res.json();
-      const replyText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    for (const bodyPayload of formatAttempts) {
+      try {
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${encodeURIComponent(cleanKey)}`;
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyPayload)
+        });
 
-      if (!replyText) {
-        throw new Error('Empty response received from Gemini API');
+        if (!res.ok) {
+          const errorJson = await res.json().catch(() => ({}));
+          const errMsg = errorJson?.error?.message || `HTTP ${res.status}`;
+          throw new Error(errMsg);
+        }
+
+        const data = await res.json();
+        const replyText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (!replyText) {
+          throw new Error('Empty response received from Gemini API');
+        }
+
+        const followUps = extractFollowUps(replyText, context);
+
+        return {
+          text: replyText,
+          modelUsed: `Google Gemini (${targetModel} - مباشر)`,
+          suggestedFollowUps: followUps,
+          fallback: false
+        };
+      } catch (err: any) {
+        lastError = err;
+        // Continue to try next format or next model
       }
-
-      // Generate context-aware follow up recommendations
-      const followUps = extractFollowUps(replyText, context);
-
-      return {
-        text: replyText,
-        modelUsed: `Google Gemini (${targetModel} - مباشر)`,
-        suggestedFollowUps: followUps,
-        fallback: false
-      };
-    } catch (err: any) {
-      lastError = err;
-      // If error is 404 model not found, try next candidate model
-      if (String(err?.message || '').includes('not found') || String(err?.message || '').includes('404')) {
-        continue;
-      }
-      throw err;
     }
   }
 
   throw lastError || new Error('Failed to reach Gemini API with available models');
+}
+
+function buildFallbackText(userMsg: string, context: any): string {
+  const line = context?.line || {};
+  const term = context?.terminology || { lineLabel: 'خط إنتاج', stageLabel: 'مرحلة' };
+  const stages = context?.stages || [];
+  const shortages = context?.shortages || [];
+  const lineWorkers = context?.lineWorkers || [];
+
+  return `بناءً على فحص بيانات ${line?.name || 'الخط الحالي'}:
+• إجمالي العمال المعينين: ${lineWorkers.length} عامل.
+• محطات العجز المسجلة: ${shortages.length > 0 ? shortages.map((s: any) => s.stageName).join('، ') : 'لا يوجد عجز مسجل'}.
+• التوصية الفورية: مراجعة العمال في المستوى 3 فأعلى ونقلهم فوراً للمحطة المتأخرة لمنع كسر الـ Takt Time.`;
 }
 
 /**

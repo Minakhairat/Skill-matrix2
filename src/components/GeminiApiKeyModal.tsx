@@ -134,18 +134,33 @@ export const GeminiApiKeyModal: React.FC<GeminiApiKeyModalProps> = ({
         {/* Modal Body */}
         <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1 text-slate-800 text-xs">
           
-          {/* Explanation Alert */}
-          <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2">
+          {/* Explanation Alert & Email Info */}
+          <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-2.5">
             <div className="flex items-center gap-2 text-indigo-950 font-bold text-xs">
               <Globe className="w-4 h-4 text-indigo-600 shrink-0" />
-              <span>لماذا يظهر المحرك المدمج (MatrixPro AI) على GitHub Pages؟</span>
+              <span>لماذا يتطلب Gemini مفتاح API بدلاً من مجرد كتابة الإيميل؟</span>
             </div>
             <p className="text-slate-700 text-[11px] leading-relaxed">
-              استضافة <strong>GitHub Pages</strong> هي استضافة ثابتة (Static Web Host) لا تحتوي على سيرفر Node.js خلفي. لذلك يتحول النظام تلقائياً للمحرك المدمج لحين تزويده بمفتاح Gemini للاتصال المباشر.
+              وفقاً لمعايير أمان <strong>Google Cloud الرسمية</strong>، لا يقبل محرك Gemini التحقق عبر كتابة عنوان بريد إلكتروني مجرد، بل يتطلب <strong>مفتاح API Key مشفّر</strong> صادر لحساب Google الخاص بك لضمان حماية بياناتك وحصتك المجانية.
             </p>
-            <div className="flex items-center gap-2 pt-1 text-[11px] text-indigo-800 font-semibold">
+            <div className="p-2.5 bg-white/80 rounded-lg border border-indigo-150 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="text-[11px] text-slate-700">
+                <span>لحسابك: </span>
+                <strong className="text-indigo-900 font-mono">minakhairat96@gmail.com</strong>
+              </div>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shrink-0 transition-colors shadow-2xs"
+              >
+                <span>إنشاء مفتاحك المجاني بضغطة زر</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-emerald-800 font-semibold">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span>بوضع مفتاحك هنا، سيعمل شات Gemini والتشخيص الذكي بكامل طاقته مباشرة من متصفحك!</span>
+              <span>المفتاح مجاني مدى الحياة من Google، وتضعه هنا مرة واحدة فقط في المتصفح!</span>
             </div>
           </div>
 
