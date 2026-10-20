@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { ProductionLine, Model, Worker, SkillLevel, Stage, AuditLogEntry, ActionType, TerminologyConfig, PlantLeadership, FullSystemBackup, AppUser } from './types/matrix';
 import { generateInitialLines, generate400Workers } from './utils/mockGenerator';
 import { 
@@ -36,7 +36,6 @@ import {
   auth, 
   onAuthStateChanged, 
   resolveUserPermissions, 
-  setupRealtimeSync,
   syncFullDatasetToFirestore,
   updateWorkerInFirestore,
   deleteWorkerFromFirestore,
@@ -171,8 +170,17 @@ export default function App() {
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [cloudSyncSuccessMsg, setCloudSyncSuccessMsg] = useState<string | null>(null);
 
-  // Helper to load full cloud dataset for user
-  const loadCloudDataForUser = useCallback(async (user: AppUser) => {
+  // Stable refs to prevent loop churn & unnecessary re-subscriptions
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
+  const hasLoadedUidRef = useRef<string | null>(null);
+
+  // Manual / On-Demand Cloud Pull: loads cloud dataset without infinite loops
+  const handlePullFromCloud = useCallback(async (user?: AppUser) => {
+    const targetUser = user || currentUserRef.current;
+    if (!targetUser) return;
     setIsCloudSyncing(true);
     try {
       localStorage.removeItem('matrixpro_logged_out');
@@ -188,15 +196,15 @@ export default function App() {
         if (dataset.terminology) setTerminology(dataset.terminology);
         if (dataset.leadership) setLeadership(dataset.leadership);
 
-        // Supervisor line matching from cloud lines
+        // Supervisor line matching
         const userAssigned = dataset.lines.filter(l => 
-          (l.supervisorEmail || '').toLowerCase().trim() === user.email.toLowerCase().trim() ||
-          user.assignedLineIds.includes(l.id)
+          (l.supervisorEmail || '').toLowerCase().trim() === targetUser.email.toLowerCase().trim() ||
+          targetUser.assignedLineIds.includes(l.id)
         ).map(l => l.id);
 
-        const allAssigned = Array.from(new Set([...user.assignedLineIds, ...userAssigned]));
+        const allAssigned = Array.from(new Set([...targetUser.assignedLineIds, ...userAssigned]));
         const updatedUser: AppUser = {
-          ...user,
+          ...targetUser,
           assignedLineIds: allAssigned
         };
         setCurrentUser(updatedUser);
@@ -222,36 +230,16 @@ export default function App() {
         setCloudSyncSuccessMsg(`تم استرجاع ومزامنة البيانات السحابية بنجاح (${dataset.workers.length} عامل و ${dataset.lines.length} خطوط) ✓`);
         setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
       } else {
-        // Cloud is empty, initialize default if user is admin and push to cloud!
-        if (user.role === 'admin') {
-          const freshLines = generateInitialLines();
-          const freshWorkers = generate400Workers(freshLines);
-          setLines(freshLines);
-          setWorkers(freshWorkers);
-          setSelectedLineId(freshLines[0].id);
-          setSelectedModelId(freshLines[0].models[0].id);
-
-          syncFullDatasetToFirestore({
-            lines: freshLines,
-            workers: freshWorkers,
-            settings: { targetWorkersPerStage, targetStagesPerWorker, minQualifiedLevel },
-            terminology,
-            leadership
-          }).then(res => {
-            setCloudSyncSuccessMsg(`تمت تهيئة قاعدة البيانات السحابية ورفع ${res.workersCount} عامل أونلاين بنجاح ✓`);
-            setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
-          }).catch(err => console.warn('Could not auto-seed cloud data:', err));
-        } else {
-          setCloudSyncSuccessMsg('قاعدة البيانات السحابية فارغة حالياً. يرجى من الأدمن تسجيل الدخول ورفع بيانات المصنع.');
-          setTimeout(() => setCloudSyncSuccessMsg(null), 5000);
-        }
+        // Cloud is empty - DO NOT automatically upload 400 documents in background!
+        setCloudSyncSuccessMsg('قاعدة البيانات السحابية جاهزة. يمكنك رفع بياناتك بالضغط على "رفع البيانات للسحابة".');
+        setTimeout(() => setCloudSyncSuccessMsg(null), 5000);
       }
     } catch (e: any) {
       console.warn('Error loading cloud data for user:', e);
     } finally {
       setIsCloudSyncing(false);
     }
-  }, [targetWorkersPerStage, targetStagesPerWorker, minQualifiedLevel, terminology, leadership]);
+  }, []);
 
   // Complete Signout Handler: wipes all browser storage & state clean
   const handleSignOutUser = async () => {
@@ -260,9 +248,8 @@ export default function App() {
     } catch (e) {
       console.warn('Error during firebase signout:', e);
     }
-    // 1. Wipe auth user
+    hasLoadedUidRef.current = null;
     setCurrentUser(null);
-    // 2. Mark explicit logged out flag and wipe browser local storage completely
     try {
       localStorage.setItem('matrixpro_logged_out', 'true');
       localStorage.removeItem('matrixpro_current_user');
@@ -274,7 +261,6 @@ export default function App() {
       localStorage.removeItem(STORAGE_KEY_LEADERSHIP);
     } catch (e) {}
 
-    // 3. Reset React state to empty/clean slate
     setWorkers([]);
     setLines([]);
     setLogs([]);
@@ -284,42 +270,36 @@ export default function App() {
     setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
   };
 
-  // Initial Firestore Connection Test & Auth Observer
+  // Initial Firestore Connection Test & Auth Observer (Attached ONCE on mount, NO infinite loops)
   useEffect(() => {
     testConnection();
     const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
       const isLoggedOut = localStorage.getItem('matrixpro_logged_out') === 'true';
-      if (fbUser && !isLoggedOut) {
-        const resolved = await resolveUserPermissions(fbUser, lines, currentUser?.role);
+      if (!fbUser || isLoggedOut) {
+        hasLoadedUidRef.current = null;
+        return;
+      }
+
+      // If already loaded for this user UID, avoid re-fetching and loop churn
+      if (hasLoadedUidRef.current === fbUser.uid) {
+        return;
+      }
+      hasLoadedUidRef.current = fbUser.uid;
+
+      try {
+        const resolved = await resolveUserPermissions(fbUser, linesRef.current, currentUserRef.current?.role);
         setCurrentUser(resolved);
         try {
           localStorage.setItem('matrixpro_current_user', JSON.stringify(resolved));
         } catch (e) {}
-        await loadCloudDataForUser(resolved);
+        await handlePullFromCloud(resolved);
+      } catch (e) {
+        console.warn('Error resolving user in auth observer:', e);
       }
     });
-    return () => unsubAuth();
-  }, [loadCloudDataForUser]);
 
-  // Real-time synchronization when user is authenticated
-  useEffect(() => {
-    if (!currentUser) return;
-    const unsubRealtime = setupRealtimeSync({
-      onLinesUpdate: (cloudLines) => {
-        if (cloudLines && cloudLines.length > 0) {
-          setLines(cloudLines);
-        }
-      },
-      onWorkersUpdate: (cloudWorkers) => {
-        // Always reflect workers update (including empty if deleted from online database)
-        setWorkers(cloudWorkers || []);
-      },
-      onError: (err) => {
-        console.warn('Realtime sync status:', err);
-      }
-    });
-    return () => unsubRealtime();
-  }, [currentUser]);
+    return () => unsubAuth();
+  }, [handlePullFromCloud]);
 
   // If supervisor logs in and has assigned line, ensure selectedLineId is their line
   useEffect(() => {
@@ -850,6 +830,8 @@ export default function App() {
         onOpenApiKeyModal={() => setIsApiKeyModalOpen(true)}
         currentUser={currentUser}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
+        onSyncNow={() => handlePullFromCloud()}
+        isSyncing={isCloudSyncing}
       />
 
       {/* Cloud & Offline Connectivity Status Alert Banner */}
@@ -1209,7 +1191,7 @@ export default function App() {
           try {
             if (user) {
               localStorage.setItem('matrixpro_current_user', JSON.stringify(user));
-              await loadCloudDataForUser(user);
+              await handlePullFromCloud(user);
             } else {
               await handleSignOutUser();
             }

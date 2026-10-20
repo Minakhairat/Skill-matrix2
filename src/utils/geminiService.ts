@@ -230,12 +230,12 @@ export async function sendChatMessageUnified(params: {
 
       if (response.ok) {
         const data = await response.json();
-        if (data && data.text && !data.fallback) {
+        if (data && data.text) {
           return {
             text: data.text,
-            modelUsed: data.modelUsed || 'Google Gemini 3.8 Flash',
+            modelUsed: data.modelUsed || (data.fallback ? 'المحرك الصناعي الذكي (MatrixPro Engine)' : 'Google Gemini 3.8 Flash'),
             suggestedFollowUps: data.suggestedFollowUps || [],
-            fallback: false
+            fallback: Boolean(data.fallback)
           };
         }
       }
@@ -259,23 +259,21 @@ export async function sendChatMessageUnified(params: {
       };
     } catch (err: any) {
       console.warn('Direct Gemini API call failed:', err);
-      const errMsg = err?.message || 'تعذر الاتصال بخوادم Google';
-      const lastUserMsg = messages[messages.length - 1]?.content || '';
-      return {
-        text: `⚠️ **تنبيه اتصال Google Gemini:** (${errMsg})\n\n*(تم توليد الحل مباشرة بواسطة المحرك الصناعي المدمج MatrixPro AI Engine):*\n\n---\n\n${buildFallbackText(lastUserMsg, context)}`,
-        modelUsed: `المحرك الصناعي المدمج (تعذر Gemini: ${errMsg.slice(0, 45)})`,
-        suggestedFollowUps: [
-          'ما هي أهم مرحلة بها عجز في الخط؟',
-          'اقترح خطة لتعويض الغياب المفاجئ',
-          'كيف نرفع مرونة عمال المستوى 2 إلى المستوى 3؟'
-        ],
-        fallback: true
-      };
     }
   }
 
-  // 3. Fallback: No server and no client API key -> signal that client key can be provided
-  throw new Error('NO_GEMINI_KEY_AVAILABLE');
+  // 3. Fallback to embedded industrial algorithmic engine with real factory context
+  const lastUserMsg = messages[messages.length - 1]?.content || '';
+  return {
+    text: buildFallbackText(lastUserMsg, context),
+    modelUsed: 'المحرك الصناعي الذكي (MatrixPro Engine)',
+    suggestedFollowUps: [
+      'ما هي أهم مرحلة بها عجز في الخط؟',
+      'اقترح خطة لتعويض الغياب المفاجئ',
+      'كيف نرفع مرونة عمال المستوى 2 إلى المستوى 3؟'
+    ],
+    fallback: true
+  };
 }
 
 /**
@@ -441,11 +439,11 @@ export async function sendAdvisorQueryUnified(params: {
 
       if (response.ok) {
         const data = await response.json();
-        if (data.text && !data.fallback) {
+        if (data.text) {
           return {
             text: data.text,
             modelUsed: data.modelUsed || 'Google Gemini 3.8 Flash',
-            source: 'gemini'
+            source: data.fallback ? 'industrial_engine' : 'gemini'
           };
         }
       }
@@ -461,7 +459,7 @@ export async function sendAdvisorQueryUnified(params: {
         apiKey: clientApiKey,
         messages: [{ role: 'user', content: prompt }],
         context,
-        requestedModel: 'gemini-2.5-flash'
+        requestedModel: 'gemini-3.8-flash'
       });
       return {
         text: direct.text,
@@ -473,7 +471,11 @@ export async function sendAdvisorQueryUnified(params: {
     }
   }
 
-  throw new Error('NO_GEMINI_KEY_AVAILABLE');
+  return {
+    text: buildFallbackText(prompt, context),
+    modelUsed: 'المحرك الصناعي الذكي (MatrixPro Engine)',
+    source: 'industrial_engine'
+  };
 }
 
 function extractFollowUps(text: string, context: any): string[] {

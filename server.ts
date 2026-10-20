@@ -99,9 +99,12 @@ app.post('/api/ai-advisor', async (req, res) => {
     const effectiveAi = getGenAIClient(clientKey);
 
     if (!effectiveAi) {
+      const fallbackReply = generateFallbackChatResponse(prompt, context);
       return res.status(200).json({
+        text: fallbackReply.text,
+        suggestedFollowUps: fallbackReply.suggestedFollowUps,
+        modelUsed: 'industrial-ai-engine',
         fallback: true,
-        message: 'No GEMINI_API_KEY configured. Switching to embedded industrial algorithmic engine.',
       });
     }
 
@@ -133,12 +136,17 @@ ${prompt}`;
     });
 
     return res.json({
-      text: response.text,
+      text: response.text || 'تم فحص البيانات الصناعية وتقديم التوصيات.',
       modelUsed: 'gemini-3.8-flash',
+      fallback: false,
     });
   } catch (error: any) {
     console.error('Gemini Advisor Error:', error);
+    const fallbackReply = generateFallbackChatResponse(req.body?.prompt || '', req.body?.context);
     return res.status(200).json({
+      text: fallbackReply.text,
+      suggestedFollowUps: fallbackReply.suggestedFollowUps,
+      modelUsed: 'industrial-ai-engine',
       fallback: true,
       error: error.message || 'Gemini error',
     });

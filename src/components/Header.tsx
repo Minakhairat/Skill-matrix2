@@ -21,7 +21,8 @@ import {
   Cloud,
   ShieldCheck,
   UserCheck,
-  LogIn
+  LogIn,
+  RefreshCw
 } from 'lucide-react';
 import { TerminologyConfig, AppUser } from '../types/matrix';
 import { getClientGeminiApiKey, getClientUserEmail } from '../utils/geminiService';
@@ -39,9 +40,12 @@ interface HeaderProps {
   onOpenClearAllModal: () => void;
   totalWorkersCount: number;
   terminology: TerminologyConfig;
+  onOpenAICopilot?: () => void;
   onOpenApiKeyModal?: () => void;
   currentUser?: AppUser | null;
   onOpenAuthModal?: () => void;
+  onSyncNow?: () => Promise<void>;
+  isSyncing?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -55,69 +59,91 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenClearAllModal,
   totalWorkersCount,
   terminology,
+  onOpenAICopilot,
   onOpenApiKeyModal,
   currentUser,
-  onOpenAuthModal
+  onOpenAuthModal,
+  onSyncNow,
+  isSyncing = false
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const clientKey = getClientGeminiApiKey();
+  const hasSavedKey = !!getClientGeminiApiKey();
   const clientEmail = getClientUserEmail();
-  const hasSavedKey = Boolean(clientKey && clientKey.length > 0);
 
   const navItems: { id: TabType; label: string; shortLabel: string; icon: React.ElementType; color: string; activeColor: string }[] = [
-    { id: 'matrix', label: 'المصفوفة الكاملة', shortLabel: 'المصفوفة', icon: Table2, color: 'text-emerald-600', activeColor: 'bg-emerald-600 text-white' },
-    { id: 'balancing', label: 'تحليل الفجوات والموازنة', shortLabel: 'الموازنة والفجوات', icon: BarChart3, color: 'text-sky-600', activeColor: 'bg-sky-600 text-white' },
-    { id: 'ai-chat', label: 'متحدث الذكاء الاصطناعي', shortLabel: 'شات الذكاء الاصطناعي (AI)', icon: MessageSquare, color: 'text-indigo-600', activeColor: 'bg-indigo-600 text-white' },
-    { id: 'ai-advisor', label: 'مستشار الذكاء الاصطناعي', shortLabel: 'المستشار وحلال المشاكل', icon: Sparkles, color: 'text-purple-600', activeColor: 'bg-purple-600 text-white' },
-    { id: 'performance', label: 'معدل التحسين والورديات', shortLabel: 'التحسين والورديات', icon: TrendingUp, color: 'text-emerald-600', activeColor: 'bg-emerald-600 text-white' },
-    { id: 'workers', label: `مرونة العمال (3 ${terminology.stageLabelPlural})`, shortLabel: 'مرونة العمال', icon: Users, color: 'text-violet-600', activeColor: 'bg-violet-600 text-white' },
-    { id: 'factory', label: `إعدادات ${terminology.lineLabelPlural} والقيادة`, shortLabel: 'الإعدادات والقيادة', icon: Settings2, color: 'text-slate-700', activeColor: 'bg-slate-800 text-white' },
-    { id: 'print', label: 'تقرير الورديات', shortLabel: 'طباعة التقرير', icon: Printer, color: 'text-amber-600', activeColor: 'bg-amber-600 text-white' },
+    { id: 'matrix', label: 'المصفوفة الكاملة', shortLabel: 'المصفوفة', icon: Table2, color: 'text-slate-700', activeColor: 'bg-slate-900 text-white' },
+    { id: 'balancing', label: 'تحليل الفجوات والموازنة', shortLabel: 'الموازنة والفجوات', icon: BarChart3, color: 'text-slate-700', activeColor: 'bg-slate-900 text-white' },
+    { id: 'performance', label: 'معدل التحسين والورديات', shortLabel: 'التحسين والورديات', icon: TrendingUp, color: 'text-slate-700', activeColor: 'bg-slate-900 text-white' },
+    { id: 'workers', label: `مرونة العمال (3 ${terminology.stageLabelPlural})`, shortLabel: 'مرونة العمال', icon: Users, color: 'text-slate-700', activeColor: 'bg-slate-900 text-white' },
+    { id: 'factory', label: `إعدادات ${terminology.lineLabelPlural} والقيادة`, shortLabel: 'الإعدادات والقيادة', icon: Settings2, color: 'text-slate-700', activeColor: 'bg-slate-900 text-white' },
+    { id: 'print', label: 'تقرير الورديات', shortLabel: 'طباعة التقرير', icon: Printer, color: 'text-slate-700', activeColor: 'bg-slate-900 text-white' },
   ];
 
   const currentTabObj = navItems.find(n => n.id === activeTab) || navItems[0];
 
   return (
-    <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-xs no-print">
+    <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-2xs no-print">
       
-      {/* Top Main Bar: Brand & Primary Controls */}
+      {/* Top Main Bar: Brand, Quick Actions, and Status */}
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-13 sm:h-15 gap-2">
+        <div className="flex items-center justify-between h-14 sm:h-16 gap-3">
           
           {/* Brand & Factory Context */}
-          <div className="flex items-center gap-2.5 shrink-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-900 flex items-center justify-center text-white font-black text-base sm:text-lg shadow-xs">
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center text-white font-black text-lg shadow-xs">
               M
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm sm:text-base font-bold text-slate-900 tracking-tight leading-none">
+              <div className="flex items-center gap-2">
+                <span className="text-base font-bold text-slate-900 tracking-tight leading-none">
                   MatrixPro
                 </span>
-                <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono font-bold">
-                  {totalWorkersCount} عامل
+                <span className="text-[11px] font-mono font-bold text-slate-500">
+                  ({totalWorkersCount} عامل)
                 </span>
               </div>
-              <div className="text-[10px] sm:text-xs text-slate-500 font-medium mt-0.5 hidden xs:block truncate">
+              <div className="text-[11px] text-slate-500 font-medium mt-0.5 hidden sm:block truncate">
                 مصفوفة المهارات وموازنة {terminology.lineLabelPlural}
               </div>
             </div>
           </div>
 
-          {/* Quick Active Page Badge (Helpful on compact laptops) */}
-          <div className="hidden md:flex lg:hidden items-center gap-1.5 px-2.5 py-1 bg-slate-100 rounded-lg text-xs font-bold text-slate-700">
-            <span>الصفحة النشطة:</span>
-            <span className="text-indigo-600">{currentTabObj.shortLabel}</span>
-          </div>
-
           {/* Action Buttons Toolbar */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             
+            {/* AI Copilot Side Drawer Trigger */}
+            {onOpenAICopilot && (
+              <button
+                type="button"
+                onClick={onOpenAICopilot}
+                title="فتح مستشار الذكاء الاصطناعي كلوحة جانبية"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-lg transition-all shadow-xs cursor-pointer whitespace-nowrap"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">المستشار الذكي (AI)</span>
+                <span className="sm:hidden">AI</span>
+              </button>
+            )}
+
+            {/* Manual Cloud Sync Trigger */}
+            {onSyncNow && (
+              <button
+                type="button"
+                onClick={onSyncNow}
+                disabled={isSyncing}
+                title="مزامنة فورية وتحديث البيانات من السحابة أونلاين"
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-slate-600 ${isSyncing ? 'animate-spin' : ''}`} />
+                <span className="hidden md:inline">{isSyncing ? 'جارٍ المزامنة...' : 'مزامنة السحابة'}</span>
+              </button>
+            )}
+
             {/* Import / Export Excel */}
             <button
               onClick={onOpenImportExport}
               title="استيراد وتصدير بيانات إكسيل Excel"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
               <span className="hidden sm:inline">إكسيل</span>
@@ -127,84 +153,56 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               onClick={onOpenSettings}
               title="تعديل الأهداف والحد الأدنى للتأهيل"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-slate-600" />
-              <span className="hidden sm:inline">الأهداف</span>
+              <span className="hidden md:inline">الأهداف</span>
             </button>
 
             {/* Audit History Log */}
             <button
               onClick={onOpenHistory}
               title="سجل النشاط والتعديلات (History)"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
             >
               <History className="w-3.5 h-3.5 text-slate-600" />
-              <span className="hidden md:inline">السجل</span>
+              <span className="hidden lg:inline">السجل</span>
             </button>
 
             {/* Clear All Data */}
             <button
               onClick={onOpenClearAllModal}
-              title="حذف جميع البيانات للبدء من الصفر"
-              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors whitespace-nowrap"
+              title="تصفير البيانات للبدء من الصفر"
+              className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-              <span className="hidden lg:inline">تصفير</span>
+              <span className="hidden xl:inline">تصفير</span>
             </button>
 
-            {/* Gemini AI Key & Account Configuration */}
-            {onOpenApiKeyModal && (
-              <button
-                onClick={onOpenApiKeyModal}
-                title="تخصيص وربط حسابك بـ Google Gemini AI"
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap border shadow-2xs cursor-pointer ${
-                  hasSavedKey 
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100' 
-                    : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
-                }`}
-              >
-                <div className="relative">
-                  <Sparkles className={`w-3.5 h-3.5 ${hasSavedKey ? 'text-emerald-600' : 'text-indigo-600'}`} />
-                  <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${hasSavedKey ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
-                </div>
-                <span className="hidden sm:inline">
-                  {hasSavedKey 
-                    ? (clientEmail ? `${clientEmail.split('@')[0]} (Gemini)` : 'Gemini AI مفعل') 
-                    : 'ربط Gemini AI'}
-                </span>
-              </button>
-            )}
-
-            {/* Firebase Auth & Sync Status Pill */}
+            {/* Firebase Auth & Account Button */}
             {onOpenAuthModal && (
               <button
                 onClick={onOpenAuthModal}
-                title={currentUser ? `مسجل كـ: ${currentUser.role === 'admin' ? 'مدير النظام' : 'مشرف خط'} (${currentUser.email})` : 'تسجيل الدخول بالجيميل للمزامنة السحابية'}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap border shadow-2xs cursor-pointer ${
+                title={currentUser ? `حساب: ${currentUser.email} (${currentUser.role === 'admin' ? 'مدير النظام' : 'مشرف خط'})` : 'تسجيل الدخول للمزامنة'}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap border cursor-pointer ${
                   currentUser
                     ? currentUser.role === 'admin'
-                      ? 'bg-purple-50 text-purple-800 border-purple-300 hover:bg-purple-100'
-                      : 'bg-sky-50 text-sky-800 border-sky-300 hover:bg-sky-100'
+                      ? 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
+                      : 'bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100'
                     : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
                 }`}
               >
-                <div className="relative">
-                  {currentUser ? (
-                    currentUser.role === 'admin' ? (
-                      <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
-                    ) : (
-                      <UserCheck className="w-3.5 h-3.5 text-sky-700" />
-                    )
+                {currentUser ? (
+                  currentUser.role === 'admin' ? (
+                    <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
                   ) : (
-                    <Cloud className="w-3.5 h-3.5 text-slate-500" />
-                  )}
-                  <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${currentUser ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-                </div>
+                    <UserCheck className="w-3.5 h-3.5 text-sky-700" />
+                  )
+                ) : (
+                  <Cloud className="w-3.5 h-3.5 text-slate-500" />
+                )}
                 <span className="hidden sm:inline">
-                  {currentUser 
-                    ? (currentUser.role === 'admin' ? '🛡️ أدمن (أونلاين)' : '👷 مشرف خط') 
-                    : '💾 أوفلاين | دخول'}
+                  {currentUser ? (currentUser.role === 'admin' ? 'أدمن' : 'مشرف') : 'دخول'}
                 </span>
               </button>
             )}
@@ -212,17 +210,17 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Primary Action: Add Worker */}
             <button
               onClick={onOpenAddWorker}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors shadow-xs whitespace-nowrap"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors shadow-xs whitespace-nowrap cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5" />
               <span>إضافة عامل</span>
             </button>
 
-            {/* Mobile Hamburger Toggle (for phones) */}
+            {/* Mobile Menu Toggle */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 sm:hidden"
-              aria-label="القائمة الرئيسية"
+              aria-label="القائمة"
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
