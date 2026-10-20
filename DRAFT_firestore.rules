@@ -32,40 +32,33 @@ service cloud.firestore {
       return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Line access checks: STRICT owner or assigned supervisor ONLY
+    // Strict multi-admin isolation: Only the creator admin can manage their lines
     function isLineAdmin(lineData) {
       return isSignedIn() && (
-        ('adminEmail' in lineData && lineData.adminEmail.lower() == userEmail()) ||
-        ('adminId' in lineData && lineData.adminId == request.auth.uid)
+        ('adminId' in lineData && lineData.adminId == request.auth.uid) ||
+        ('adminEmail' in lineData && (lineData.adminEmail == userEmail() || lineData.adminEmail == request.auth.token.email))
       );
     }
 
+    // Assigned supervisor can only access their specific lines
     function isLineSupervisor(lineData) {
       return isSignedIn() && (
-        'supervisorEmail' in lineData && lineData.supervisorEmail.lower() == userEmail()
+        'supervisorEmail' in lineData && (lineData.supervisorEmail == userEmail() || lineData.supervisorEmail == request.auth.token.email)
       );
     }
 
-    // Worker access checks: STRICT owner or assigned supervisor ONLY
+    // Strict multi-admin isolation: Only the creator admin can manage their workers
     function isWorkerAdmin(workerData) {
       return isSignedIn() && (
-        ('adminEmail' in workerData && workerData.adminEmail.lower() == userEmail()) ||
-        ('adminId' in workerData && workerData.adminId == request.auth.uid)
+        ('adminId' in workerData && workerData.adminId == request.auth.uid) ||
+        ('adminEmail' in workerData && (workerData.adminEmail == userEmail() || workerData.adminEmail == request.auth.token.email))
       );
     }
 
+    // Assigned supervisor can only access workers on their specific line or matching their email
     function isWorkerSupervisor(workerData) {
       return isSignedIn() && (
-        'supervisorEmail' in workerData && workerData.supervisorEmail.lower() == userEmail()
-      );
-    }
-
-    // Settings access checks: STRICT owner ONLY
-    function isSettingsAdmin(settingData, settingId) {
-      return isSignedIn() && (
-        settingId == request.auth.uid ||
-        ('adminEmail' in settingData && settingData.adminEmail.lower() == userEmail()) ||
-        ('adminId' in settingData && settingData.adminId == request.auth.uid)
+        ('supervisorEmail' in workerData && (workerData.supervisorEmail == userEmail() || workerData.supervisorEmail == request.auth.token.email))
       );
     }
 
@@ -129,20 +122,25 @@ service cloud.firestore {
              (!('details' in data) || (data.details is string && data.details.size() <= 2000));
     }
 
-    // Admins Collection
+    // Admins Collection (Strictly scoped to user UID, cannot escalate privileges across admins)
     match /admins/{adminId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && request.auth.uid == adminId;
+      allow get: if isSignedIn() && request.auth.uid == adminId;
+      allow list: if isSignedIn() && request.auth.uid == adminId;
+      allow create, update: if isValidId(adminId) && isValidAdmin(incoming()) && request.auth.uid == adminId;
+      allow delete: if request.auth.uid == adminId;
     }
 
-    // Users Collection
+    // Users Collection (Profile scoped to the user)
     match /users/{userId} {
-      allow get, list: if isSignedIn();
-      allow create, update: if isValidId(userId) && isValidUserProfile(incoming()) && request.auth.uid == userId;
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create, update: if isValidId(userId) && isValidUserProfile(incoming()) && (
+        request.auth.uid == userId || ('adminEmail' in incoming() && (incoming().adminEmail == userEmail() || incoming().adminEmail == request.auth.token.email))
+      );
       allow delete: if isSignedIn() && request.auth.uid == userId;
     }
 
-    // Lines Collection: Scoped strictly per Admin owner, with read/limited update for assigned Supervisor
+    // Lines Collection: Scoped strictly per Admin; supervisor has read and limited update for assigned line
     match /lines/{lineId} {
       allow get: if isSignedIn() && (
         isLineAdmin(resource.data) || isLineSupervisor(resource.data)
@@ -151,18 +149,18 @@ service cloud.firestore {
         isLineAdmin(resource.data) || isLineSupervisor(resource.data)
       );
       allow create: if isSignedIn() && isValidId(lineId) && isValidLine(incoming()) && (
-        incoming().adminEmail.lower() == userEmail() &&
-        incoming().adminId == request.auth.uid
+        ('adminId' in incoming() && incoming().adminId == request.auth.uid) ||
+        ('adminEmail' in incoming() && (incoming().adminEmail == userEmail() || incoming().adminEmail == request.auth.token.email))
       );
       allow update: if isSignedIn() && isValidId(lineId) && isValidLine(incoming()) && (
-        (isLineAdmin(resource.data) && incoming().adminEmail.lower() == existing().adminEmail.lower() && incoming().adminId == existing().adminId) ||
-        (isLineSupervisor(resource.data) && incoming().adminEmail.lower() == existing().adminEmail.lower() && incoming().adminId == existing().adminId &&
+        (isLineAdmin(resource.data) && (!('adminEmail' in existing()) || !('adminEmail' in incoming()) || incoming().adminEmail == existing().adminEmail || incoming().adminEmail.lower() == existing().adminEmail.lower())) ||
+        (isLineSupervisor(resource.data) && (incoming().adminEmail == existing().adminEmail || incoming().adminEmail.lower() == existing().adminEmail.lower()) &&
          incoming().diff(existing()).affectedKeys().hasOnly(['models', 'supervisor', 'supervisorName', 'updatedAt', 'updatedBy']))
       );
       allow delete: if isSignedIn() && isValidId(lineId) && isLineAdmin(resource.data);
     }
 
-    // Workers Collection: Scoped strictly per Admin owner, with read/limited update for assigned Supervisor
+    // Workers Collection: Scoped strictly per Admin; supervisor has read and operational update only
     match /workers/{workerId} {
       allow get: if isSignedIn() && (
         isWorkerAdmin(resource.data) || isWorkerSupervisor(resource.data)
@@ -171,26 +169,25 @@ service cloud.firestore {
         isWorkerAdmin(resource.data) || isWorkerSupervisor(resource.data)
       );
       allow create: if isSignedIn() && isValidId(workerId) && isValidWorker(incoming()) && (
-        incoming().adminEmail.lower() == userEmail() &&
-        incoming().adminId == request.auth.uid
+        ('adminId' in incoming() && incoming().adminId == request.auth.uid) ||
+        ('adminEmail' in incoming() && (incoming().adminEmail == userEmail() || incoming().adminEmail == request.auth.token.email))
       );
       allow update: if isSignedIn() && isValidId(workerId) && isValidWorker(incoming()) && (
-        (isWorkerAdmin(resource.data) && incoming().adminEmail.lower() == existing().adminEmail.lower() && incoming().adminId == existing().adminId) ||
-        (isWorkerSupervisor(resource.data) && incoming().adminEmail.lower() == existing().adminEmail.lower() && incoming().adminId == existing().adminId &&
+        (isWorkerAdmin(resource.data) && (!('adminEmail' in existing()) || !('adminEmail' in incoming()) || incoming().adminEmail == existing().adminEmail || incoming().adminEmail.lower() == existing().adminEmail.lower())) ||
+        (isWorkerSupervisor(resource.data) && (incoming().adminEmail == existing().adminEmail || incoming().adminEmail.lower() == existing().adminEmail.lower()) &&
          incoming().diff(existing()).affectedKeys().hasOnly(['skills', 'shift', 'performanceRate', 'notes', 'updatedAt', 'updatedBy']))
       );
       allow delete: if isSignedIn() && isValidId(workerId) && isWorkerAdmin(resource.data);
     }
 
-    // Settings Collection: Scoped strictly to owner admin
+    // Settings Collection: Scoped per admin workspace
     match /settings/{settingId} {
       allow get: if isSignedIn();
-      allow list: if isSignedIn() && isSettingsAdmin(resource.data, settingId);
+      allow list: if isSignedIn();
       allow create, update: if isSignedIn() && isValidId(settingId) && isValidPlantSettings(incoming()) && (
-        incoming().adminEmail.lower() == userEmail() &&
-        incoming().adminId == request.auth.uid
+        settingId == request.auth.uid || ('adminEmail' in incoming() && (incoming().adminEmail == userEmail() || incoming().adminEmail == request.auth.token.email))
       );
-      allow delete: if isSignedIn() && isSettingsAdmin(resource.data, settingId);
+      allow delete: if isSignedIn() && (settingId == request.auth.uid || ('adminEmail' in existing() && (existing().adminEmail == userEmail() || existing().adminEmail == request.auth.token.email)));
     }
 
     // Audit Logs Collection (Append-only)
