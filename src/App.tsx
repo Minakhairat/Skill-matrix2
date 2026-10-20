@@ -57,7 +57,8 @@ export default function App() {
   const [lines, setLines] = useState<ProductionLine[]>(() => {
     try {
       const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('matrixpro_logged_out') === 'true';
-      if (isLoggedOut) return [];
+      const hasUser = typeof window !== 'undefined' && Boolean(localStorage.getItem('matrixpro_current_user'));
+      if (isLoggedOut || hasUser) return [];
       const saved = localStorage.getItem(STORAGE_KEY_LINES);
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -72,7 +73,8 @@ export default function App() {
   const [workers, setWorkers] = useState<Worker[]>(() => {
     try {
       const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('matrixpro_logged_out') === 'true';
-      if (isLoggedOut) return [];
+      const hasUser = typeof window !== 'undefined' && Boolean(localStorage.getItem('matrixpro_current_user'));
+      if (isLoggedOut || hasUser) return [];
       const saved = localStorage.getItem(STORAGE_KEY_WORKERS);
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -217,12 +219,16 @@ export default function App() {
         if (roleToLoad === 'supervisor') {
           setCloudSyncSuccessMsg(`👷 وضع المشرف: لم يقم أي مدير نظام (Admin) بإسناد خطوط إنتاج إلى بريدك (${targetUser.email}) حتى الآن.`);
         } else {
-          setCloudSyncSuccessMsg(`🛡️ وضع مدير النظام: حسابك (${targetUser.email}) لا يحتوي على خطوط مسجلة بعد.`);
+          setCloudSyncSuccessMsg(`🛡️ وضع مدير النظام: حسابك (${targetUser.email}) لا يحتوي على خطوط مسجلة باسمك كأدمن بعد.`);
         }
         setTimeout(() => setCloudSyncSuccessMsg(null), 5000);
       }
     } catch (e: any) {
       console.warn('Error loading cloud data for user:', e);
+      setLines([]);
+      setWorkers([]);
+      setSelectedLineId('');
+      setSelectedModelId('');
     } finally {
       setIsCloudSyncing(false);
     }
@@ -231,6 +237,13 @@ export default function App() {
   // Quick switch role in app header or empty state
   const handleRoleToggleInApp = async (newRole: UserRole) => {
     if (!currentUser) return;
+    setIsCloudSyncing(true);
+    // Clear lines and workers immediately to prevent stale visual bleed across roles
+    setLines([]);
+    setWorkers([]);
+    setSelectedLineId('');
+    setSelectedModelId('');
+
     const assigned = lines
       .filter(l => (l.supervisorEmail || '').toLowerCase().trim() === currentUser.email.toLowerCase().trim())
       .map(l => l.id);
@@ -323,7 +336,7 @@ export default function App() {
       hasLoadedUidRef.current = fbUser.uid;
 
       try {
-        const resolved = await resolveUserPermissions(fbUser, linesRef.current, currentUserRef.current?.role);
+        const resolved = await resolveUserPermissions(fbUser, undefined, currentUserRef.current?.role);
         setCurrentUser(resolved);
         try {
           localStorage.setItem('matrixpro_current_user', JSON.stringify(resolved));
@@ -525,7 +538,12 @@ export default function App() {
 
   // Check if current user is permitted to edit this line
   const isCurrentLinePermitted = useMemo(() => {
-    if (!currentUser || currentUser.role === 'admin') return true;
+    if (!currentUser) return true;
+    if (currentUser.role === 'admin') {
+      if (!selectedLine) return true;
+      if (!selectedLine.adminEmail) return true;
+      return selectedLine.adminEmail.toLowerCase().trim() === currentUser.email.toLowerCase().trim();
+    }
     return (
       currentUser.assignedLineIds.includes(selectedLineId) ||
       (selectedLine?.supervisorEmail && selectedLine.supervisorEmail.toLowerCase().trim() === currentUser.email.toLowerCase().trim())
@@ -1364,6 +1382,12 @@ export default function App() {
         onClose={() => setIsAuthModalOpen(false)}
         currentUser={currentUser}
         onUserChange={async (user, roleChanged) => {
+          if (roleChanged) {
+            setLines([]);
+            setWorkers([]);
+            setSelectedLineId('');
+            setSelectedModelId('');
+          }
           setCurrentUser(user);
           try {
             if (user) {

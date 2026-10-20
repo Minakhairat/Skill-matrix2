@@ -66,7 +66,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setIsUnauthorizedDomain(false);
       localStorage.removeItem('matrixpro_logged_out');
       const user = await loginWithGoogle();
-      const resolvedUser = await resolveUserPermissions(user, lines, roleChoice);
+      const resolvedUser = await resolveUserPermissions(user, undefined, roleChoice);
 
       onUserChange(resolvedUser, true);
       setSuccessMsg(`تم تسجيل الدخول بنجاح كـ ${resolvedUser.role === 'admin' ? 'مدير النظام (Admin)' : 'مشرف خط'}!`);

@@ -27,7 +27,7 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { ProductionLine, Worker, AppUser, UserRole, TerminologyConfig, PlantLeadership } from '../types/matrix';
 
 // Pre-approved Admin emails configured in applet runtime
-export const DEFAULT_ADMIN_EMAILS = ['minakhairat1@gmail.com', 'minakhairat2@gmail.com', 'minakhairat96@gmail.com'];
+export const DEFAULT_ADMIN_EMAILS = ['minakhairat96@gmail.com'];
 export const PRIMARY_ADMIN_EMAIL = 'minakhairat96@gmail.com';
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -175,22 +175,23 @@ export async function verifyAdminStatus(user: FirebaseUser): Promise<boolean> {
   }
 }
 
-// Resolve user role and assigned lines - querying Firestore directly
+// Resolve user role and assigned lines - querying Firestore directly without stale memory bleed
 export async function resolveUserPermissions(
   user: FirebaseUser,
-  lines: ProductionLine[],
+  _ignoredMemoryLines?: ProductionLine[],
   preferredRole?: UserRole
 ): Promise<AppUser> {
   const normalizedEmail = (user.email || '').toLowerCase().trim();
   const assignedSet = new Set<string>();
   let assignedAdminEmail: string | undefined;
 
-  // 1. Gather lines assigned to this supervisor from Firestore
+  // 1. Gather lines assigned to this supervisor from Firestore directly
   try {
     const linesSnap = await getDocs(query(collection(db, 'lines'), where('supervisorEmail', '==', normalizedEmail)));
     linesSnap.forEach(d => {
       const data = d.data();
-      assignedSet.add(data.id || d.id);
+      const lineId = data.id || d.id;
+      assignedSet.add(lineId);
       if (!assignedAdminEmail && data.adminEmail) {
         assignedAdminEmail = data.adminEmail;
       }
@@ -199,25 +200,24 @@ export async function resolveUserPermissions(
     console.warn('Could not read assigned lines in resolveUserPermissions:', e);
   }
 
-  // Also check provided lines in memory
-  if (lines && lines.length > 0) {
-    lines.forEach(l => {
-      if ((l.supervisorEmail || '').toLowerCase().trim() === normalizedEmail) {
-        assignedSet.add(l.id);
-        if (!assignedAdminEmail && l.adminEmail) {
-          assignedAdminEmail = l.adminEmail;
-        }
-      }
-    });
-  }
-
   const assigned = Array.from(assignedSet);
+
+  // 2. Check if user already owns any lines as admin
+  let hasAdminLines = false;
+  try {
+    const adminLinesSnap = await getDocs(query(collection(db, 'lines'), where('adminEmail', '==', normalizedEmail)));
+    hasAdminLines = !adminLinesSnap.empty;
+  } catch (e) {
+    console.warn('Could not check admin lines in resolveUserPermissions:', e);
+  }
 
   let role: UserRole = 'admin';
   if (preferredRole) {
     role = preferredRole;
+  } else if (hasAdminLines) {
+    role = 'admin';
   } else if (assigned.length > 0) {
-    // If lines have been assigned to this email by an admin, prioritize supervisor
+    // If lines have been assigned to this email by an admin and no admin lines, prioritize supervisor
     role = 'supervisor';
   } else {
     // Default to admin mode for their own isolated factory
@@ -304,12 +304,12 @@ export async function fetchFullDatasetFromFirestore(
       );
       let linesSnap = await getDocs(adminLinesQuery);
 
-      // Backwards-compatibility fallback: if this is primary admin and no lines found with adminEmail
-      if (linesSnap.empty && DEFAULT_ADMIN_EMAILS.includes(normalizedEmail)) {
+      // Backwards-compatibility fallback: ONLY for the primary admin email
+      if (linesSnap.empty && normalizedEmail === PRIMARY_ADMIN_EMAIL) {
         const allLinesSnap = await getDocs(collection(db, 'lines'));
         const legacyDocs = allLinesSnap.docs.filter(d => {
           const data = d.data();
-          return !data.adminEmail || data.adminEmail === normalizedEmail || data.adminEmail === PRIMARY_ADMIN_EMAIL;
+          return !data.adminEmail || data.adminEmail === normalizedEmail;
         });
         if (legacyDocs.length > 0) {
           linesSnap = { docs: legacyDocs, empty: false } as any;
@@ -317,21 +317,26 @@ export async function fetchFullDatasetFromFirestore(
       }
 
       if (!linesSnap.empty) {
-        const loadedLines: ProductionLine[] = [];
+        const linesMap = new Map<string, ProductionLine>();
         linesSnap.docs.forEach(docSnap => {
           const d = docSnap.data();
-          loadedLines.push({
-            id: d.id || docSnap.id,
-            name: d.name || docSnap.id,
-            nameEn: d.nameEn || d.name || '',
-            code: d.code || d.id || docSnap.id,
-            supervisor: d.supervisorName || d.supervisor || '',
-            supervisorEmail: (d.supervisorEmail || '').toLowerCase().trim(),
-            adminEmail: d.adminEmail || normalizedEmail,
-            adminId: d.adminId || user.uid,
-            models: d.models || []
-          });
+          const lineId = d.id || docSnap.id.replace(`${user.uid}_`, '');
+          // Deduplicate by line ID so duplicate documents are never loaded!
+          if (!linesMap.has(lineId)) {
+            linesMap.set(lineId, {
+              id: lineId,
+              name: d.name || lineId,
+              nameEn: d.nameEn || d.name || '',
+              code: d.code || lineId,
+              supervisor: d.supervisorName || d.supervisor || '',
+              supervisorEmail: (d.supervisorEmail || '').toLowerCase().trim(),
+              adminEmail: d.adminEmail || normalizedEmail,
+              adminId: d.adminId || user.uid,
+              models: d.models || []
+            });
+          }
         });
+        const loadedLines = Array.from(linesMap.values());
         loadedLines.sort((a, b) => a.id.localeCompare(b.id));
         result.lines = loadedLines;
       }
@@ -343,11 +348,11 @@ export async function fetchFullDatasetFromFirestore(
       );
       let workersSnap = await getDocs(adminWorkersQuery);
 
-      if (workersSnap.empty && DEFAULT_ADMIN_EMAILS.includes(normalizedEmail)) {
+      if (workersSnap.empty && normalizedEmail === PRIMARY_ADMIN_EMAIL) {
         const allWorkersSnap = await getDocs(collection(db, 'workers'));
         const legacyWorkers = allWorkersSnap.docs.filter(d => {
           const data = d.data();
-          return !data.adminEmail || data.adminEmail === normalizedEmail || data.adminEmail === PRIMARY_ADMIN_EMAIL;
+          return !data.adminEmail || data.adminEmail === normalizedEmail;
         });
         if (legacyWorkers.length > 0) {
           workersSnap = { docs: legacyWorkers, empty: false } as any;
@@ -355,34 +360,35 @@ export async function fetchFullDatasetFromFirestore(
       }
 
       if (!workersSnap.empty) {
-        const loadedWorkers: Worker[] = [];
+        const workersMap = new Map<string, Worker>();
         workersSnap.docs.forEach(docSnap => {
           const d = docSnap.data();
-          loadedWorkers.push({
-            id: d.id || docSnap.id,
-            empCode: d.code || docSnap.id,
-            name: d.name || '',
-            lineId: d.lineId || '',
-            shift: (d.shift as 'A' | 'B' | 'C') || 'A',
-            targetStagesCount: d.targetStagesCount || 3,
-            minProficiencyTarget: d.minProficiencyTarget || 3,
-            skills: d.skills || {},
-            hireDate: d.hireDate || '2023-01-01',
-            notes: d.notes || '',
-            adminEmail: d.adminEmail || normalizedEmail,
-            adminId: d.adminId || user.uid,
-            supervisorEmail: d.supervisorEmail || ''
-          });
+          const workerId = d.id || docSnap.id.replace(`${user.uid}_`, '');
+          // Deduplicate by worker ID
+          if (!workersMap.has(workerId)) {
+            workersMap.set(workerId, {
+              id: workerId,
+              empCode: d.code || workerId,
+              name: d.name || '',
+              lineId: d.lineId || '',
+              shift: (d.shift as 'A' | 'B' | 'C') || 'A',
+              targetStagesCount: d.targetStagesCount || 3,
+              minProficiencyTarget: d.minProficiencyTarget || 3,
+              skills: d.skills || {},
+              hireDate: d.hireDate || '2023-01-01',
+              notes: d.notes || '',
+              adminEmail: d.adminEmail || normalizedEmail,
+              adminId: d.adminId || user.uid,
+              supervisorEmail: (d.supervisorEmail || '').toLowerCase().trim()
+            });
+          }
         });
-        result.workers = loadedWorkers;
+        result.workers = Array.from(workersMap.values());
       }
 
       // 3. Fetch admin-scoped settings
       try {
-        let settingsSnap = await getDoc(doc(db, 'settings', user.uid));
-        if (!settingsSnap.exists()) {
-          settingsSnap = await getDoc(doc(db, 'settings', 'plant_config'));
-        }
+        const settingsSnap = await getDoc(doc(db, 'settings', user.uid));
         if (settingsSnap.exists()) {
           const d = settingsSnap.data();
           result.settings = {
@@ -397,7 +403,7 @@ export async function fetchFullDatasetFromFirestore(
         console.warn('Could not read admin settings:', e);
       }
 
-      result.hasData = result.lines.length > 0 || result.workers.length > 0;
+      result.hasData = result.lines.length > 0;
       result.assignedLinesCount = result.lines.length;
       return result;
     }
@@ -424,7 +430,7 @@ export async function fetchFullDatasetFromFirestore(
         return result;
       }
 
-      const assignedLines: ProductionLine[] = [];
+      const linesMap = new Map<string, ProductionLine>();
       const assignedLineIds: string[] = [];
       let parentAdminEmail: string | undefined;
       let parentAdminId: string | undefined;
@@ -432,23 +438,28 @@ export async function fetchFullDatasetFromFirestore(
       linesSnap.docs.forEach(docSnap => {
         const d = docSnap.data();
         const lineId = d.id || docSnap.id;
-        assignedLineIds.push(lineId);
+        if (!assignedLineIds.includes(lineId)) {
+          assignedLineIds.push(lineId);
+        }
         if (!parentAdminEmail && d.adminEmail) parentAdminEmail = d.adminEmail;
         if (!parentAdminId && d.adminId) parentAdminId = d.adminId;
 
-        assignedLines.push({
-          id: lineId,
-          name: d.name || lineId,
-          nameEn: d.nameEn || d.name || '',
-          code: d.code || lineId,
-          supervisor: d.supervisorName || d.supervisor || '',
-          supervisorEmail: (d.supervisorEmail || '').toLowerCase().trim(),
-          adminEmail: d.adminEmail || '',
-          adminId: d.adminId || '',
-          models: d.models || []
-        });
+        if (!linesMap.has(lineId)) {
+          linesMap.set(lineId, {
+            id: lineId,
+            name: d.name || lineId,
+            nameEn: d.nameEn || d.name || '',
+            code: d.code || lineId,
+            supervisor: d.supervisorName || d.supervisor || '',
+            supervisorEmail: (d.supervisorEmail || '').toLowerCase().trim(),
+            adminEmail: d.adminEmail || '',
+            adminId: d.adminId || '',
+            models: d.models || []
+          });
+        }
       });
 
+      const assignedLines = Array.from(linesMap.values());
       assignedLines.sort((a, b) => a.id.localeCompare(b.id));
       result.lines = assignedLines;
       result.assignedLinesCount = assignedLines.length;
@@ -462,17 +473,21 @@ export async function fetchFullDatasetFromFirestore(
             where('adminEmail', '==', parentAdminEmail)
           );
         } else {
-          workersQuery = collection(db, 'workers');
+          workersQuery = query(
+            collection(db, 'workers'),
+            where('supervisorEmail', '==', normalizedEmail)
+          );
         }
 
         const workersSnap = await getDocs(workersQuery);
-        const filteredWorkers: Worker[] = [];
+        const workersMap = new Map<string, Worker>();
         workersSnap.docs.forEach(docSnap => {
           const d = docSnap.data();
-          if (assignedLineIds.includes(d.lineId)) {
-            filteredWorkers.push({
-              id: d.id || docSnap.id,
-              empCode: d.code || docSnap.id,
+          const workerId = d.id || docSnap.id;
+          if (assignedLineIds.includes(d.lineId) && !workersMap.has(workerId)) {
+            workersMap.set(workerId, {
+              id: workerId,
+              empCode: d.code || workerId,
               name: d.name || '',
               lineId: d.lineId,
               shift: (d.shift as 'A' | 'B' | 'C') || 'A',
@@ -487,10 +502,10 @@ export async function fetchFullDatasetFromFirestore(
             });
           }
         });
-        result.workers = filteredWorkers;
+        result.workers = Array.from(workersMap.values());
       }
 
-      // 3. Fetch settings from the parent admin who created these lines
+      // 3. Fetch settings from parent admin
       if (parentAdminId) {
         try {
           const settingsSnap = await getDoc(doc(db, 'settings', parentAdminId));
@@ -529,7 +544,7 @@ export async function saveSupervisorEmailToFirestore(
   const lineId = typeof lineOrId === 'string' ? lineOrId : lineOrId.id;
   const lineObj = typeof lineOrId === 'object' ? lineOrId : null;
   const normalizedEmail = (supervisorEmail || '').toLowerCase().trim();
-  const currentAdminEmail = user?.email || auth.currentUser?.email || PRIMARY_ADMIN_EMAIL;
+  const currentAdminEmail = (user?.email || auth.currentUser?.email || PRIMARY_ADMIN_EMAIL).toLowerCase().trim();
   const currentAdminUid = user?.uid || auth.currentUser?.uid || '';
 
   const docKey = currentAdminUid ? `${currentAdminUid}_${lineId}` : lineId;
@@ -542,7 +557,7 @@ export async function saveSupervisorEmailToFirestore(
     supervisor: supervisorName.trim(),
     supervisorName: supervisorName.trim(),
     supervisorEmail: normalizedEmail,
-    adminEmail: currentAdminEmail.toLowerCase().trim(),
+    adminEmail: currentAdminEmail,
     adminId: currentAdminUid,
     shiftCount: 3,
     models: lineObj?.models || [],
@@ -555,13 +570,36 @@ export async function saveSupervisorEmailToFirestore(
   }
 
   try {
+    // Write ONLY to single deterministic document
     await setDoc(doc(db, 'lines', docKey), payload, { merge: true });
-    // Also save under raw lineId for backwards compatibility if needed
+    // Clean up unprefixed doc if it was previously created
     if (docKey !== lineId) {
-      await setDoc(doc(db, 'lines', lineId), payload, { merge: true });
+      deleteDoc(doc(db, 'lines', lineId)).catch(() => {});
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+
+  // Also propagate supervisorEmail to all workers on this line
+  try {
+    const workersSnap = await getDocs(query(
+      collection(db, 'workers'),
+      where('lineId', '==', lineId),
+      where('adminEmail', '==', currentAdminEmail)
+    ));
+    if (!workersSnap.empty) {
+      const batch = writeBatch(db);
+      workersSnap.docs.forEach(wDoc => {
+        batch.update(wDoc.ref, {
+          supervisorEmail: normalizedEmail,
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentAdminEmail
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('Could not propagate supervisor email to line workers:', e);
   }
 
   // Update or link the user in users collection if exists
@@ -617,23 +655,11 @@ export async function syncFullDatasetToFirestore(data: {
       updatedAt: new Date().toISOString(),
       updatedBy: currentUserEmail
     });
-    // Also update plant_config for backwards compatibility if primary admin
-    if (DEFAULT_ADMIN_EMAILS.includes(currentUserEmail)) {
-      await setDoc(doc(db, 'settings', 'plant_config'), {
-        ...data.settings,
-        terminology: data.terminology,
-        leadership: data.leadership,
-        adminEmail: currentUserEmail,
-        adminId: currentUserUid,
-        updatedAt: new Date().toISOString(),
-        updatedBy: currentUserEmail
-      });
-    }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, pathSettings);
   }
 
-  // 2. Sync lines scoped to admin
+  // 2. Sync lines scoped to admin - SINGLE DOCUMENT PER LINE ONLY
   const lineSupervisorMap = new Map<string, string>();
   for (const line of data.lines) {
     const docKey = `${currentUserUid}_${line.id}`;
@@ -660,15 +686,18 @@ export async function syncFullDatasetToFirestore(data: {
     };
 
     try {
+      // Save ONLY to single docKey
       await setDoc(doc(db, 'lines', docKey), payload);
-      // Also update line.id directly for backwards compatibility
-      await setDoc(doc(db, 'lines', line.id), payload);
+      // Clean up legacy unprefixed doc so it never causes duplication
+      if (docKey !== line.id) {
+        deleteDoc(doc(db, 'lines', line.id)).catch(() => {});
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, pathLine);
     }
   }
 
-  // 3. Sync workers in batches scoped to admin
+  // 3. Sync workers in batches scoped to admin - SINGLE DOCUMENT PER WORKER ONLY
   const BATCH_SIZE = 400;
   for (let i = 0; i < data.workers.length; i += BATCH_SIZE) {
     const chunk = data.workers.slice(i, i + BATCH_SIZE);
@@ -699,9 +728,9 @@ export async function syncFullDatasetToFirestore(data: {
       };
 
       batch.set(ref, workerPayload);
-      // Also update under w.id for primary admin legacy support
-      if (DEFAULT_ADMIN_EMAILS.includes(currentUserEmail)) {
-        batch.set(doc(db, 'workers', w.id), workerPayload);
+      // Clean up legacy unprefixed worker doc so it never causes duplication
+      if (docKey !== w.id) {
+        batch.delete(doc(db, 'workers', w.id));
       }
     }
     try {
@@ -716,7 +745,7 @@ export async function syncFullDatasetToFirestore(data: {
 
 // Single line update
 export async function updateLineInFirestore(line: ProductionLine, user?: AppUser | null): Promise<void> {
-  const currentAdminEmail = line.adminEmail || user?.email || auth.currentUser?.email || PRIMARY_ADMIN_EMAIL;
+  const currentAdminEmail = (line.adminEmail || user?.email || auth.currentUser?.email || PRIMARY_ADMIN_EMAIL).toLowerCase().trim();
   const currentAdminUid = line.adminId || user?.uid || auth.currentUser?.uid || '';
   const docKey = currentAdminUid ? `${currentAdminUid}_${line.id}` : line.id;
   const path = `lines/${docKey}`;
@@ -729,7 +758,7 @@ export async function updateLineInFirestore(line: ProductionLine, user?: AppUser
     supervisor: line.supervisor || '',
     supervisorName: line.supervisor || '',
     supervisorEmail: (line.supervisorEmail || '').toLowerCase().trim(),
-    adminEmail: currentAdminEmail.toLowerCase().trim(),
+    adminEmail: currentAdminEmail,
     adminId: currentAdminUid,
     shiftCount: 3,
     models: line.models || [],
@@ -740,7 +769,7 @@ export async function updateLineInFirestore(line: ProductionLine, user?: AppUser
   try {
     await setDoc(doc(db, 'lines', docKey), payload, { merge: true });
     if (docKey !== line.id) {
-      await setDoc(doc(db, 'lines', line.id), payload, { merge: true });
+      deleteDoc(doc(db, 'lines', line.id)).catch(() => {});
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
@@ -765,7 +794,7 @@ export async function deleteLineFromFirestore(lineId: string, user?: AppUser | n
 
 // Single worker update
 export async function updateWorkerInFirestore(worker: Worker, user?: AppUser | null): Promise<void> {
-  const currentAdminEmail = worker.adminEmail || user?.email || auth.currentUser?.email || PRIMARY_ADMIN_EMAIL;
+  const currentAdminEmail = (worker.adminEmail || user?.email || auth.currentUser?.email || PRIMARY_ADMIN_EMAIL).toLowerCase().trim();
   const currentAdminUid = worker.adminId || user?.uid || auth.currentUser?.uid || '';
   const docKey = currentAdminUid ? `${currentAdminUid}_${worker.id}` : worker.id;
   const path = `workers/${docKey}`;
@@ -781,7 +810,7 @@ export async function updateWorkerInFirestore(worker: Worker, user?: AppUser | n
     performanceRate: 95,
     notes: worker.notes || '',
     hireDate: worker.hireDate || '2023-01-01',
-    adminEmail: currentAdminEmail.toLowerCase().trim(),
+    adminEmail: currentAdminEmail,
     adminId: currentAdminUid,
     supervisorEmail: (worker.supervisorEmail || '').toLowerCase().trim(),
     targetStagesCount: worker.targetStagesCount || 3,
@@ -793,7 +822,7 @@ export async function updateWorkerInFirestore(worker: Worker, user?: AppUser | n
   try {
     await setDoc(doc(db, 'workers', docKey), payload, { merge: true });
     if (docKey !== worker.id) {
-      await setDoc(doc(db, 'workers', worker.id), payload, { merge: true });
+      deleteDoc(doc(db, 'workers', worker.id)).catch(() => {});
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
