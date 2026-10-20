@@ -27,8 +27,8 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { ProductionLine, Worker, AppUser, UserRole, TerminologyConfig, PlantLeadership } from '../types/matrix';
 
 // Pre-approved Admin emails configured in applet runtime
-export const DEFAULT_ADMIN_EMAILS = ['minakhairat1@gmail.com', 'minakhairat2@gmail.com'];
-export const PRIMARY_ADMIN_EMAIL = 'minakhairat1@gmail.com';
+export const DEFAULT_ADMIN_EMAILS = ['minakhairat1@gmail.com', 'minakhairat2@gmail.com', 'minakhairat96@gmail.com'];
+export const PRIMARY_ADMIN_EMAIL = 'minakhairat96@gmail.com';
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
