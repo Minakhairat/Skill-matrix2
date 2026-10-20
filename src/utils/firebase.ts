@@ -686,19 +686,15 @@ export async function syncFullDatasetToFirestore(data: {
     };
 
     try {
-      // Save ONLY to single docKey
+      // Save ONLY to single docKey scoped to admin
       await setDoc(doc(db, 'lines', docKey), payload);
-      // Clean up legacy unprefixed doc so it never causes duplication
-      if (docKey !== line.id) {
-        deleteDoc(doc(db, 'lines', line.id)).catch(() => {});
-      }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, pathLine);
     }
   }
 
-  // 3. Sync workers in batches scoped to admin - SINGLE DOCUMENT PER WORKER ONLY
-  const BATCH_SIZE = 400;
+  // 3. Sync workers in batches scoped to admin - SINGLE DOCUMENT PER WORKER ONLY (safe chunks of 200)
+  const BATCH_SIZE = 200;
   for (let i = 0; i < data.workers.length; i += BATCH_SIZE) {
     const chunk = data.workers.slice(i, i + BATCH_SIZE);
     const batch = writeBatch(db);
@@ -728,10 +724,6 @@ export async function syncFullDatasetToFirestore(data: {
       };
 
       batch.set(ref, workerPayload);
-      // Clean up legacy unprefixed worker doc so it never causes duplication
-      if (docKey !== w.id) {
-        batch.delete(doc(db, 'workers', w.id));
-      }
     }
     try {
       await batch.commit();

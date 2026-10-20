@@ -75,6 +75,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         onClose();
       }, 1500);
     } catch (err: any) {
+      if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
+        // User intentionally closed or cancelled the login popup
+        return;
+      }
       console.error('Login error:', err);
       const isUnauth = err?.code === 'auth/unauthorized-domain' || 
                        String(err?.message || '').toLowerCase().includes('unauthorized-domain');
