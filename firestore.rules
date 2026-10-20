@@ -36,14 +36,14 @@ service cloud.firestore {
     function isLineAdmin(lineData) {
       return isSignedIn() && (
         ('adminId' in lineData && lineData.adminId == request.auth.uid) ||
-        ('adminEmail' in lineData && lineData.adminEmail.lower() == userEmail())
+        ('adminEmail' in lineData && (lineData.adminEmail == userEmail() || lineData.adminEmail == request.auth.token.email))
       );
     }
 
     // Assigned supervisor can only access their specific lines
     function isLineSupervisor(lineData) {
       return isSignedIn() && (
-        'supervisorEmail' in lineData && lineData.supervisorEmail.lower() == userEmail()
+        'supervisorEmail' in lineData && (lineData.supervisorEmail == userEmail() || lineData.supervisorEmail == request.auth.token.email)
       );
     }
 
@@ -51,14 +51,14 @@ service cloud.firestore {
     function isWorkerAdmin(workerData) {
       return isSignedIn() && (
         ('adminId' in workerData && workerData.adminId == request.auth.uid) ||
-        ('adminEmail' in workerData && workerData.adminEmail.lower() == userEmail())
+        ('adminEmail' in workerData && (workerData.adminEmail == userEmail() || workerData.adminEmail == request.auth.token.email))
       );
     }
 
     // Assigned supervisor can only access workers on their specific line or matching their email
     function isWorkerSupervisor(workerData) {
       return isSignedIn() && (
-        ('supervisorEmail' in workerData && workerData.supervisorEmail.lower() == userEmail())
+        ('supervisorEmail' in workerData && (workerData.supervisorEmail == userEmail() || workerData.supervisorEmail == request.auth.token.email))
       );
     }
 
@@ -150,11 +150,11 @@ service cloud.firestore {
       );
       allow create: if isSignedIn() && isValidId(lineId) && isValidLine(incoming()) && (
         ('adminId' in incoming() && incoming().adminId == request.auth.uid) ||
-        ('adminEmail' in incoming() && incoming().adminEmail.lower() == userEmail())
+        ('adminEmail' in incoming() && (incoming().adminEmail == userEmail() || incoming().adminEmail == request.auth.token.email))
       );
       allow update: if isSignedIn() && isValidId(lineId) && isValidLine(incoming()) && (
-        (isLineAdmin(resource.data) && (!('adminEmail' in existing()) || !('adminEmail' in incoming()) || incoming().adminEmail.lower() == existing().adminEmail.lower())) ||
-        (isLineSupervisor(resource.data) && incoming().adminEmail.lower() == existing().adminEmail.lower() &&
+        (isLineAdmin(resource.data) && (!('adminEmail' in existing()) || !('adminEmail' in incoming()) || incoming().adminEmail == existing().adminEmail || incoming().adminEmail.lower() == existing().adminEmail.lower())) ||
+        (isLineSupervisor(resource.data) && (incoming().adminEmail == existing().adminEmail || incoming().adminEmail.lower() == existing().adminEmail.lower()) &&
          incoming().diff(existing()).affectedKeys().hasOnly(['models', 'supervisor', 'supervisorName', 'updatedAt', 'updatedBy']))
       );
       allow delete: if isSignedIn() && isValidId(lineId) && isLineAdmin(resource.data);
@@ -170,11 +170,11 @@ service cloud.firestore {
       );
       allow create: if isSignedIn() && isValidId(workerId) && isValidWorker(incoming()) && (
         ('adminId' in incoming() && incoming().adminId == request.auth.uid) ||
-        ('adminEmail' in incoming() && incoming().adminEmail.lower() == userEmail())
+        ('adminEmail' in incoming() && (incoming().adminEmail == userEmail() || incoming().adminEmail == request.auth.token.email))
       );
       allow update: if isSignedIn() && isValidId(workerId) && isValidWorker(incoming()) && (
-        (isWorkerAdmin(resource.data) && (!('adminEmail' in existing()) || !('adminEmail' in incoming()) || incoming().adminEmail.lower() == existing().adminEmail.lower())) ||
-        (isWorkerSupervisor(resource.data) && incoming().adminEmail.lower() == existing().adminEmail.lower() &&
+        (isWorkerAdmin(resource.data) && (!('adminEmail' in existing()) || !('adminEmail' in incoming()) || incoming().adminEmail == existing().adminEmail || incoming().adminEmail.lower() == existing().adminEmail.lower())) ||
+        (isWorkerSupervisor(resource.data) && (incoming().adminEmail == existing().adminEmail || incoming().adminEmail.lower() == existing().adminEmail.lower()) &&
          incoming().diff(existing()).affectedKeys().hasOnly(['skills', 'shift', 'performanceRate', 'notes', 'updatedAt', 'updatedBy']))
       );
       allow delete: if isSignedIn() && isValidId(workerId) && isWorkerAdmin(resource.data);

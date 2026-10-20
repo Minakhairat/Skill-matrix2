@@ -244,9 +244,11 @@ export default function App() {
     setSelectedLineId('');
     setSelectedModelId('');
 
-    const assigned = lines
-      .filter(l => (l.supervisorEmail || '').toLowerCase().trim() === currentUser.email.toLowerCase().trim())
-      .map(l => l.id);
+    const assigned = currentUser.assignedLineIds && currentUser.assignedLineIds.length > 0
+      ? currentUser.assignedLineIds
+      : lines
+          .filter(l => (l.supervisorEmail || '').toLowerCase().trim() === currentUser.email.toLowerCase().trim())
+          .map(l => l.id);
 
     const updatedUser: AppUser = {
       ...currentUser,

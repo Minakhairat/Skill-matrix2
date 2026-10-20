@@ -200,9 +200,27 @@ export async function resolveUserPermissions(
     console.warn('Could not read assigned lines in resolveUserPermissions:', e);
   }
 
+  // 2. Check if user profile exists in Firestore users collection
+  let userProfileRole: UserRole | undefined;
+  try {
+    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    if (userDoc.exists()) {
+      const uData = userDoc.data();
+      userProfileRole = uData.role as UserRole;
+      if (Array.isArray(uData.assignedLineIds)) {
+        uData.assignedLineIds.forEach((id: string) => assignedSet.add(id));
+      }
+      if (!assignedAdminEmail && uData.assignedAdminEmail) {
+        assignedAdminEmail = uData.assignedAdminEmail;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not read user profile doc in resolveUserPermissions:', e);
+  }
+
   const assigned = Array.from(assignedSet);
 
-  // 2. Check if user already owns any lines as admin
+  // 3. Check if user already owns any lines as admin
   let hasAdminLines = false;
   try {
     const adminLinesSnap = await getDocs(query(collection(db, 'lines'), where('adminEmail', '==', normalizedEmail)));
@@ -211,17 +229,22 @@ export async function resolveUserPermissions(
     console.warn('Could not check admin lines in resolveUserPermissions:', e);
   }
 
-  let role: UserRole = 'admin';
-  if (preferredRole) {
-    role = preferredRole;
-  } else if (hasAdminLines) {
+  const isDefaultAdmin = DEFAULT_ADMIN_EMAILS.includes(normalizedEmail);
+
+  let role: UserRole;
+  if (isDefaultAdmin) {
     role = 'admin';
+  } else if (assigned.length > 0 && !hasAdminLines) {
+    // If lines have been assigned to this email by an admin and user owns no admin lines, prioritize supervisor!
+    role = 'supervisor';
+  } else if (hasAdminLines && assigned.length === 0) {
+    role = 'admin';
+  } else if (preferredRole && (preferredRole === 'supervisor' ? assigned.length > 0 : hasAdminLines || isDefaultAdmin)) {
+    role = preferredRole;
   } else if (assigned.length > 0) {
-    // If lines have been assigned to this email by an admin and no admin lines, prioritize supervisor
     role = 'supervisor';
   } else {
-    // Default to admin mode for their own isolated factory
-    role = 'admin';
+    role = userProfileRole || 'admin';
   }
 
   if (role === 'admin') {
@@ -466,43 +489,43 @@ export async function fetchFullDatasetFromFirestore(
 
       // 2. Fetch workers that belong to the supervisor's assigned lines ONLY
       if (assignedLineIds.length > 0) {
-        let workersQuery;
-        if (parentAdminEmail) {
-          workersQuery = query(
-            collection(db, 'workers'),
-            where('adminEmail', '==', parentAdminEmail)
-          );
-        } else {
-          workersQuery = query(
-            collection(db, 'workers'),
-            where('supervisorEmail', '==', normalizedEmail)
-          );
+        const workersQuery = query(
+          collection(db, 'workers'),
+          where('supervisorEmail', '==', normalizedEmail)
+        );
+
+        let workersSnap;
+        try {
+          workersSnap = await getDocs(workersQuery);
+        } catch (wErr) {
+          console.warn('Could not query workers for supervisor:', wErr);
         }
 
-        const workersSnap = await getDocs(workersQuery);
         const workersMap = new Map<string, Worker>();
-        workersSnap.docs.forEach(docSnap => {
-          const d = docSnap.data();
-          const workerId = d.id || docSnap.id;
-          if (assignedLineIds.includes(d.lineId) && !workersMap.has(workerId)) {
-            workersMap.set(workerId, {
-              id: workerId,
-              empCode: d.code || workerId,
-              name: d.name || '',
-              lineId: d.lineId,
-              shift: (d.shift as 'A' | 'B' | 'C') || 'A',
-              targetStagesCount: d.targetStagesCount || 3,
-              minProficiencyTarget: d.minProficiencyTarget || 3,
-              skills: d.skills || {},
-              hireDate: d.hireDate || '2023-01-01',
-              notes: d.notes || '',
-              adminEmail: d.adminEmail || parentAdminEmail || '',
-              adminId: d.adminId || parentAdminId || '',
-              supervisorEmail: d.supervisorEmail || normalizedEmail
-            });
-          }
-        });
-        result.workers = Array.from(workersMap.values());
+        if (workersSnap && !workersSnap.empty) {
+          workersSnap.docs.forEach(docSnap => {
+            const d = docSnap.data();
+            const workerId = d.id || docSnap.id;
+            if (assignedLineIds.includes(d.lineId) && !workersMap.has(workerId)) {
+              workersMap.set(workerId, {
+                id: workerId,
+                empCode: d.code || workerId,
+                name: d.name || '',
+                lineId: d.lineId,
+                shift: (d.shift as 'A' | 'B' | 'C') || 'A',
+                targetStagesCount: d.targetStagesCount || 3,
+                minProficiencyTarget: d.minProficiencyTarget || 3,
+                skills: d.skills || {},
+                hireDate: d.hireDate || '2023-01-01',
+                notes: d.notes || '',
+                adminEmail: d.adminEmail || parentAdminEmail || '',
+                adminId: d.adminId || parentAdminId || '',
+                supervisorEmail: d.supervisorEmail || normalizedEmail
+              });
+            }
+          });
+          result.workers = Array.from(workersMap.values());
+        }
       }
 
       // 3. Fetch settings from parent admin
@@ -732,6 +755,29 @@ export async function syncFullDatasetToFirestore(data: {
     }
   }
 
+  // 4. Link supervisors in users collection if user documents exist
+  for (const [lineId, supEmail] of lineSupervisorMap.entries()) {
+    if (supEmail) {
+      try {
+        const usersSnap = await getDocs(query(collection(db, 'users'), where('email', '==', supEmail)));
+        for (const uDoc of usersSnap.docs) {
+          const uData = uDoc.data();
+          const existing: string[] = Array.isArray(uData.assignedLineIds) ? uData.assignedLineIds : [];
+          if (!existing.includes(lineId)) {
+            await setDoc(doc(db, 'users', uDoc.id), {
+              role: 'supervisor',
+              assignedLineIds: [...existing, lineId],
+              assignedAdminEmail: currentUserEmail,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+          }
+        }
+      } catch (e) {
+        console.warn('Could not link supervisor user doc during sync:', e);
+      }
+    }
+  }
+
   return { linesCount: data.lines.length, workersCount: data.workers.length };
 }
 
@@ -765,6 +811,31 @@ export async function updateLineInFirestore(line: ProductionLine, user?: AppUser
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+
+  // Also propagate supervisorEmail to line workers if present
+  const supEmail = (line.supervisorEmail || '').toLowerCase().trim();
+  if (supEmail && currentAdminEmail) {
+    try {
+      const workersSnap = await getDocs(query(
+        collection(db, 'workers'),
+        where('lineId', '==', line.id),
+        where('adminEmail', '==', currentAdminEmail)
+      ));
+      if (!workersSnap.empty) {
+        const batch = writeBatch(db);
+        workersSnap.docs.forEach(wDoc => {
+          batch.update(wDoc.ref, {
+            supervisorEmail: supEmail,
+            updatedAt: new Date().toISOString(),
+            updatedBy: user?.email || auth.currentUser?.email || 'admin'
+          });
+        });
+        await batch.commit();
+      }
+    } catch (e) {
+      console.warn('Could not propagate supervisor email in updateLineInFirestore:', e);
+    }
   }
 }
 
