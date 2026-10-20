@@ -43,9 +43,7 @@ service cloud.firestore {
     // Assigned supervisor can only access their specific lines
     function isLineSupervisor(lineData) {
       return isSignedIn() && (
-        lineData.supervisorEmail == request.auth.token.email ||
-        lineData.supervisorEmail == userEmail() ||
-        ('supervisorEmail' in lineData && (lineData.supervisorEmail == request.auth.token.email || lineData.supervisorEmail == userEmail()))
+        'supervisorEmail' in lineData && (lineData.supervisorEmail == userEmail() || lineData.supervisorEmail == request.auth.token.email)
       );
     }
 
@@ -60,9 +58,7 @@ service cloud.firestore {
     // Assigned supervisor can only access workers on their specific line or matching their email
     function isWorkerSupervisor(workerData) {
       return isSignedIn() && (
-        workerData.supervisorEmail == request.auth.token.email ||
-        workerData.supervisorEmail == userEmail() ||
-        ('supervisorEmail' in workerData && (workerData.supervisorEmail == request.auth.token.email || workerData.supervisorEmail == userEmail()))
+        ('supervisorEmail' in workerData && (workerData.supervisorEmail == userEmail() || workerData.supervisorEmail == request.auth.token.email))
       );
     }
 
@@ -76,7 +72,7 @@ service cloud.firestore {
 
     function isValidUserProfile(data) {
       return data.keys().hasAll(['uid', 'email', 'role']) &&
-             data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'assignedLineIds', 'adminEmail', 'assignedAdminEmail', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'assignedLineIds', 'assignedAdminEmail', 'createdAt', 'updatedAt']) &&
              data.uid is string && data.uid.size() <= 128 &&
              data.email is string && data.email.size() <= 128 &&
              (data.role == 'admin' || data.role == 'supervisor') &&
@@ -139,9 +135,7 @@ service cloud.firestore {
       allow get: if isSignedIn();
       allow list: if isSignedIn();
       allow create, update: if isValidId(userId) && isValidUserProfile(incoming()) && (
-        request.auth.uid == userId ||
-        ('adminEmail' in incoming() && incoming().adminEmail.lower() == userEmail()) ||
-        ('assignedAdminEmail' in incoming() && incoming().assignedAdminEmail.lower() == userEmail())
+        request.auth.uid == userId || ('adminEmail' in incoming() && incoming().adminEmail.lower() == userEmail())
       );
       allow delete: if isSignedIn() && request.auth.uid == userId;
     }

@@ -26,7 +26,6 @@ import {
 } from 'lucide-react';
 import { TerminologyConfig, AppUser } from '../types/matrix';
 import { getClientGeminiApiKey, getClientUserEmail } from '../utils/geminiService';
-import { PWAInstallButton } from './PWAInstallButton';
 
 export type TabType = 'matrix' | 'balancing' | 'ai-chat' | 'ai-advisor' | 'performance' | 'workers' | 'factory' | 'print';
 
@@ -112,9 +111,6 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Action Buttons Toolbar */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             
-            {/* PWA / Android Install Trigger */}
-            <PWAInstallButton variant="header" />
-
             {/* AI Copilot Side Drawer Trigger */}
             {onOpenAICopilot && (
               <button
@@ -364,11 +360,6 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               </button>
             )}
-
-            {/* Android PWA Install Card on Mobile */}
-            <div className="pt-1">
-              <PWAInstallButton variant="banner" />
-            </div>
 
             <div className="text-[10px] font-bold text-slate-400 px-2">إجراءات سريعة:</div>
             <div className="grid grid-cols-2 gap-1.5">
