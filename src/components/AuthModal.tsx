@@ -22,7 +22,7 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: AppUser | null;
-  onUserChange: (user: AppUser | null) => void;
+  onUserChange: (user: AppUser | null, roleChanged?: boolean) => void;
   lines: ProductionLine[];
   onSyncAllToCloud?: () => Promise<void>;
   isSyncing?: boolean;
@@ -68,7 +68,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const user = await loginWithGoogle();
       const resolvedUser = await resolveUserPermissions(user, lines, roleChoice);
 
-      onUserChange(resolvedUser);
+      onUserChange(resolvedUser, true);
       setSuccessMsg(`تم تسجيل الدخول بنجاح كـ ${resolvedUser.role === 'admin' ? 'مدير النظام (Admin)' : 'مشرف خط'}!`);
       setTimeout(() => {
         setSuccessMsg(null);
@@ -102,7 +102,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       role: newRole,
       assignedLineIds: assigned
     };
-    onUserChange(updatedUser);
+    onUserChange(updatedUser, true);
 
     if (auth.currentUser) {
       try {
@@ -112,8 +112,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
     }
 
-    setSuccessMsg(`تم تحديث الصلاحية إلى ${newRole === 'admin' ? 'مدير النظام (Admin)' : 'مشرف خط'} بنجاح!`);
-    setTimeout(() => setSuccessMsg(null), 2000);
+    setSuccessMsg(
+      newRole === 'admin'
+        ? 'تم التبديل إلى مدير النظام (Admin) - يتم عرض البيانات الخاصة بحسابك كأدمن فقط.'
+        : 'تم التبديل إلى مشرف خط - يتم عرض البيانات المسندة لإيميلك من قِبل الأدمن فقط.'
+    );
+    setTimeout(() => setSuccessMsg(null), 3000);
   };
 
   const handleSignOut = async () => {

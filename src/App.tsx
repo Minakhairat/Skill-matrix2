@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ProductionLine, Model, Worker, SkillLevel, Stage, AuditLogEntry, ActionType, TerminologyConfig, PlantLeadership, FullSystemBackup, AppUser } from './types/matrix';
+import { ProductionLine, Model, Worker, SkillLevel, Stage, AuditLogEntry, ActionType, TerminologyConfig, PlantLeadership, FullSystemBackup, AppUser, UserRole } from './types/matrix';
 import { generateInitialLines, generate400Workers } from './utils/mockGenerator';
 import { 
   DEFAULT_WORKSTATION_TARGET, 
@@ -44,9 +44,10 @@ import {
   clearAllWorkersFromFirestore,
   saveSupervisorEmailToFirestore,
   fetchFullDatasetFromFirestore,
-  logoutUser
+  logoutUser,
+  setUserRole
 } from './utils/firebase';
-import { Bot, MessageSquare, Cloud, ShieldCheck, UserCheck, AlertTriangle, RefreshCw, CheckCircle2, Lock } from 'lucide-react';
+import { Bot, MessageSquare, Cloud, ShieldCheck, UserCheck, AlertTriangle, RefreshCw, CheckCircle2, Lock, ChevronLeft } from 'lucide-react';
 import { GeminiAIChatView } from './components/GeminiAIChatView';
 import { Footer } from './components/Footer';
 import { calculateWorkerFlexibility } from './utils/matrixCalculations';
@@ -177,14 +178,15 @@ export default function App() {
   currentUserRef.current = currentUser;
   const hasLoadedUidRef = useRef<string | null>(null);
 
-  // Manual / On-Demand Cloud Pull: loads cloud dataset without infinite loops
-  const handlePullFromCloud = useCallback(async (user?: AppUser) => {
+  // Manual / On-Demand Cloud Pull: loads cloud dataset strictly partitioned by active role and workspace owner
+  const handlePullFromCloud = useCallback(async (user?: AppUser, roleOverride?: UserRole) => {
     const targetUser = user || currentUserRef.current;
     if (!targetUser) return;
+    const roleToLoad = roleOverride || targetUser.role;
     setIsCloudSyncing(true);
     try {
       localStorage.removeItem('matrixpro_logged_out');
-      const dataset = await fetchFullDatasetFromFirestore();
+      const dataset = await fetchFullDatasetFromFirestore(targetUser, roleToLoad);
       if (dataset.hasData && dataset.lines.length > 0) {
         setLines(dataset.lines);
         setWorkers(dataset.workers);
@@ -196,42 +198,27 @@ export default function App() {
         if (dataset.terminology) setTerminology(dataset.terminology);
         if (dataset.leadership) setLeadership(dataset.leadership);
 
-        // Supervisor line matching
-        const userAssigned = dataset.lines.filter(l => 
-          (l.supervisorEmail || '').toLowerCase().trim() === targetUser.email.toLowerCase().trim() ||
-          targetUser.assignedLineIds.includes(l.id)
-        ).map(l => l.id);
-
-        const allAssigned = Array.from(new Set([...targetUser.assignedLineIds, ...userAssigned]));
-        const updatedUser: AppUser = {
-          ...targetUser,
-          assignedLineIds: allAssigned
-        };
-        setCurrentUser(updatedUser);
-        try {
-          localStorage.setItem('matrixpro_current_user', JSON.stringify(updatedUser));
-        } catch (e) {}
-
-        if (updatedUser.role === 'supervisor') {
-          if (allAssigned.length > 0) {
-            setSelectedLineId(allAssigned[0]);
-            const targetLine = dataset.lines.find(l => l.id === allAssigned[0]);
-            if (targetLine && targetLine.models.length > 0) {
-              setSelectedModelId(targetLine.models[0].id);
-            }
-          }
-        } else if (dataset.lines.length > 0) {
-          setSelectedLineId(dataset.lines[0].id);
-          if (dataset.lines[0].models.length > 0) {
-            setSelectedModelId(dataset.lines[0].models[0].id);
-          }
+        setSelectedLineId(dataset.lines[0].id);
+        if (dataset.lines[0].models && dataset.lines[0].models.length > 0) {
+          setSelectedModelId(dataset.lines[0].models[0].id);
         }
 
-        setCloudSyncSuccessMsg(`تم استرجاع ومزامنة البيانات السحابية بنجاح (${dataset.workers.length} عامل و ${dataset.lines.length} خطوط) ✓`);
+        const msg = roleToLoad === 'admin'
+          ? `تم استرجاع ومزامنة مصنعك كمدير نظام بنجاح (${dataset.workers.length} عامل و ${dataset.lines.length} خطوط) ✓`
+          : `تم استرجاع خطوطك المسندة إليك من الأدمن بنجاح (${dataset.lines.length} خطوط و ${dataset.workers.length} عمال) ✓`;
+        setCloudSyncSuccessMsg(msg);
         setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
       } else {
-        // Cloud is empty - DO NOT automatically upload 400 documents in background!
-        setCloudSyncSuccessMsg('قاعدة البيانات السحابية جاهزة. يمكنك رفع بياناتك بالضغط على "رفع البيانات للسحابة".');
+        // No data found in this role's workspace
+        setLines([]);
+        setWorkers([]);
+        setSelectedLineId('');
+        setSelectedModelId('');
+        if (roleToLoad === 'supervisor') {
+          setCloudSyncSuccessMsg(`👷 وضع المشرف: لم يقم أي مدير نظام (Admin) بإسناد خطوط إنتاج إلى بريدك (${targetUser.email}) حتى الآن.`);
+        } else {
+          setCloudSyncSuccessMsg(`🛡️ وضع مدير النظام: حسابك (${targetUser.email}) لا يحتوي على خطوط مسجلة بعد.`);
+        }
         setTimeout(() => setCloudSyncSuccessMsg(null), 5000);
       }
     } catch (e: any) {
@@ -240,6 +227,55 @@ export default function App() {
       setIsCloudSyncing(false);
     }
   }, []);
+
+  // Quick switch role in app header or empty state
+  const handleRoleToggleInApp = async (newRole: UserRole) => {
+    if (!currentUser) return;
+    const assigned = lines
+      .filter(l => (l.supervisorEmail || '').toLowerCase().trim() === currentUser.email.toLowerCase().trim())
+      .map(l => l.id);
+
+    const updatedUser: AppUser = {
+      ...currentUser,
+      role: newRole,
+      assignedLineIds: assigned
+    };
+    setCurrentUser(updatedUser);
+    try {
+      localStorage.setItem('matrixpro_current_user', JSON.stringify(updatedUser));
+      if (auth.currentUser) {
+        await setUserRole(auth.currentUser, newRole, assigned);
+      }
+    } catch (e) {}
+    await handlePullFromCloud(updatedUser, newRole);
+  };
+
+  // Generate demo data for an admin starting fresh
+  const handleInitializeDemoForAdmin = () => {
+    const adminEmail = (currentUser?.email || 'admin@plant.com').toLowerCase().trim();
+    const adminUid = currentUser?.uid || 'admin';
+    const initLines = generateInitialLines().map(l => ({
+      ...l,
+      adminEmail,
+      adminId: adminUid
+    }));
+    const initWorkers = generate400Workers(initLines).map(w => ({
+      ...w,
+      adminEmail,
+      adminId: adminUid
+    }));
+    setLines(initLines);
+    setWorkers(initWorkers);
+    if (initLines.length > 0) {
+      setSelectedLineId(initLines[0].id);
+      if (initLines[0].models && initLines[0].models.length > 0) {
+        setSelectedModelId(initLines[0].models[0].id);
+      }
+    }
+    logAction('data_imported', 'تهيئة مصنع أولي', 'تم توليد نموذج مصنع أولي (400 عامل) لحسابك كأدمن.');
+    setCloudSyncSuccessMsg('تم توليد 400 عامل تجريبي لمصنعك. اضغط على "مزامنة السحابة" أو "رفع البيانات للسحابة" لحفظها أونلاين.');
+    setTimeout(() => setCloudSyncSuccessMsg(null), 5000);
+  };
 
   // Complete Signout Handler: wipes all browser storage & state clean
   const handleSignOutUser = async () => {
@@ -292,7 +328,7 @@ export default function App() {
         try {
           localStorage.setItem('matrixpro_current_user', JSON.stringify(resolved));
         } catch (e) {}
-        await handlePullFromCloud(resolved);
+        await handlePullFromCloud(resolved, resolved.role);
       } catch (e) {
         console.warn('Error resolving user in auth observer:', e);
       }
@@ -496,8 +532,12 @@ export default function App() {
     );
   }, [currentUser, selectedLineId, selectedLine]);
 
-  // Cloud Database Full Push (Admin feature)
+  // Cloud Database Full Push (Admin feature strictly for admin workspace)
   const handlePushFullDataToCloud = async () => {
+    if (currentUser?.role === 'supervisor') {
+      alert('عذراً: رفع ومزامنة كامل قاعدة البيانات متاح فقط لمدير النظام (Admin). المشرف يقوم بإدارة الخطوط المسندة إليه فقط.');
+      return;
+    }
     try {
       setIsCloudSyncing(true);
       const res = await syncFullDatasetToFirestore({
@@ -506,8 +546,8 @@ export default function App() {
         settings: { targetWorkersPerStage, targetStagesPerWorker, minQualifiedLevel },
         terminology,
         leadership
-      });
-      setCloudSyncSuccessMsg(`تم رفع ومزامنة ${res.linesCount} خطوط و ${res.workersCount} عمال بنجاح إلى سحابة Firestore!`);
+      }, currentUser);
+      setCloudSyncSuccessMsg(`تم رفع ومزامنة ${res.linesCount} خطوط و ${res.workersCount} عمال بنجاح إلى مساحة عملك كأدمن في سحابة Firestore!`);
       logAction('data_imported', 'مزامنة سحابية (Firestore)', `تم رفع قاعدة البيانات كاملة (${res.workersCount} عمال و ${res.linesCount} خطوط) إلى السحابة.`);
       setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
     } catch (err: any) {
@@ -540,7 +580,7 @@ export default function App() {
     setWorkerToEdit(null);
 
     if (currentUser) {
-      updateWorkerInFirestore(savedWorker).catch(err => console.warn('Could not sync worker to Firestore:', err));
+      updateWorkerInFirestore(savedWorker, currentUser).catch(err => console.warn('Could not sync worker to Firestore:', err));
     }
   };
 
@@ -553,7 +593,7 @@ export default function App() {
 
     if (currentUser) {
       try {
-        await deleteWorkerFromFirestore(workerId);
+        await deleteWorkerFromFirestore(workerId, currentUser);
         setWorkers(prev => prev.filter(w => w.id !== workerId));
         if (targetWorker) {
           logAction(
@@ -587,7 +627,7 @@ export default function App() {
         const targetLineId = isSupervisor ? selectedLineId : undefined;
         const lineName = lines.find(l => l.id === selectedLineId)?.name || 'الخط';
 
-        const deletedCount = await clearAllWorkersFromFirestore(targetLineId);
+        const deletedCount = await clearAllWorkersFromFirestore(targetLineId, currentUser);
 
         if (isSupervisor) {
           setWorkers(prev => prev.filter(w => w.lineId !== selectedLineId));
@@ -642,7 +682,7 @@ export default function App() {
 
     if (currentUser) {
       try {
-        await saveSupervisorEmailToFirestore(updatedLine, supervisorName, normalizedEmail);
+        await saveSupervisorEmailToFirestore(updatedLine, supervisorName, normalizedEmail, currentUser);
         setCloudSyncSuccessMsg(`تم اعتماد وحفظ إيميل المشرف (${normalizedEmail || 'بدون إيميل'}) للـ ${updatedLine.name} في السحابة بنجاح ✓`);
         setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
       } catch (e: any) {
@@ -786,7 +826,7 @@ export default function App() {
     if (currentUser) {
       // 1. Delete removed lines & their workers from Firestore
       for (const rem of removedLines) {
-        deleteLineFromFirestore(rem.id).catch(err => console.warn('Could not delete line from Firestore:', err));
+        deleteLineFromFirestore(rem.id, currentUser).catch(err => console.warn('Could not delete line from Firestore:', err));
       }
       // 2. Sync remaining lines
       for (const line of newLines) {
@@ -795,7 +835,7 @@ export default function App() {
           (line.supervisorEmail && line.supervisorEmail.toLowerCase().trim() === currentUser.email.toLowerCase().trim());
 
         if (isPermitted) {
-          updateLineInFirestore(line).catch(err => console.warn('Could not sync line to Firestore:', err));
+          updateLineInFirestore(line, currentUser).catch(err => console.warn('Could not sync line to Firestore:', err));
         }
       }
     }
@@ -951,41 +991,178 @@ export default function App() {
       {/* Main Content Viewport */}
       {lines.length === 0 ? (
         <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-8 flex flex-col items-center justify-center text-center my-auto">
-          <div className="bg-white p-6 sm:p-10 rounded-3xl border border-slate-200 shadow-xl space-y-5 max-w-xl w-full animate-in fade-in zoom-in-95">
-            <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
-              <Cloud className="w-7 h-7" />
-            </div>
-            <div>
-              <h2 className="text-lg sm:text-xl font-bold text-slate-900">
-                تم تسجيل الخروج وتفريغ ذاكرة المتصفح
-              </h2>
-              <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                تم مسح وتفريغ كافة البيانات من المتصفح بالكامل لضمان الأمان والخصوصية. سجل دخولك كـ <strong>مدير النظام (Admin)</strong> أو <strong>مشرف خط</strong> لاسترجاع بيانات المصنع والعمال أونلاين فوراً من سحابة Firestore.
-              </p>
-            </div>
+          {currentUser && currentUser.role === 'supervisor' ? (
+            <div className="bg-white p-6 sm:p-10 rounded-3xl border border-sky-200 shadow-xl space-y-5 max-w-xl w-full animate-in fade-in zoom-in-95">
+              <div className="w-14 h-14 bg-sky-50 text-sky-700 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+                <UserCheck className="w-7 h-7" />
+              </div>
+              <div>
+                <span className="inline-block px-3 py-1 bg-sky-100 text-sky-800 text-xs font-bold rounded-full mb-2">
+                  👷 وضع مشرف خط (Supervisor Mode)
+                </span>
+                <h2 className="text-lg sm:text-xl font-bold text-slate-900">
+                  لا توجد خطوط إنتاج مسندة لبريدك حالياً
+                </h2>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                  أنت مسجل حالياً بالبريد الإلكتروني <strong className="text-slate-900 font-mono">{currentUser.email}</strong>، ولكن لم يقم أي مدير نظام (Admin) بإسناد أي خط إنتاج إليك بعد.
+                </p>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-600 mt-3 text-right space-y-1">
+                  <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
+                    <span>حماية وعزل البيانات بين المديرين والمشرفين:</span>
+                  </div>
+                  <p>
+                    تطبيقاً لسياسات الأمان، بيانات خطوط الإنتاج والعمال محمية وخاصة بكل مدير نظام. لا يمكن للمشرف استعراض أو تعديل أي بيانات إلا بعد قيام الأدمن المسؤول بإضافة بريدك الإلكتروني في إعدادات الخط الخاص به.
+                  </p>
+                </div>
+              </div>
 
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsAuthModalOpen(true)}
-                className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs sm:text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                <Cloud className="w-4 h-4" />
-                <span>تسجيل الدخول (Google Gmail) واسترجاع البيانات</span>
-              </button>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => handlePullFromCloud(currentUser, 'supervisor')}
+                  disabled={isCloudSyncing}
+                  className="w-full sm:w-auto px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl text-xs shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isCloudSyncing ? 'animate-spin' : ''}`} />
+                  <span>إعادة فحص السحابة</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={handleReset400Workers}
-                className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs sm:text-sm transition-all cursor-pointer"
-              >
-                بدء العمل ببيانات تجريبية (400 عامل)
-              </button>
+                <button
+                  type="button"
+                  onClick={() => handleRoleToggleInApp('admin')}
+                  className="w-full sm:w-auto px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 font-bold rounded-xl text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
+                  <span>التبديل إلى مدير نظام (Admin) لمصنعك الخاص</span>
+                </button>
+              </div>
             </div>
-          </div>
+          ) : currentUser && currentUser.role === 'admin' ? (
+            <div className="bg-white p-6 sm:p-10 rounded-3xl border border-purple-200 shadow-xl space-y-5 max-w-xl w-full animate-in fade-in zoom-in-95">
+              <div className="w-14 h-14 bg-purple-50 text-purple-700 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+                <ShieldCheck className="w-7 h-7" />
+              </div>
+              <div>
+                <span className="inline-block px-3 py-1 bg-purple-100 text-purple-800 text-xs font-bold rounded-full mb-2">
+                  🛡️ مساحة عمل مدير النظام (Admin Workspace)
+                </span>
+                <h2 className="text-lg sm:text-xl font-bold text-slate-900">
+                  مرحباً بك! لم تسجل خطوط إنتاج بعد
+                </h2>
+                <p className="text-xs text-slate-600 mt-2 leading-relaxed">
+                  حسابك: <strong className="text-slate-900 font-mono">{currentUser.email}</strong>. مساحة عملك معزولة ومحمية بالكامل، ولا تظهر بياناتك لأي مشرف إلا إذا أسندت له الخط بالبريد الإلكتروني، ولن تظهر لك بيانات أي أدمن آخر.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 text-right">
+                <button
+                  type="button"
+                  onClick={handleInitializeDemoForAdmin}
+                  className="p-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs shadow-md transition-all cursor-pointer flex items-center justify-between"
+                >
+                  <span>⚡ توليد نموذج مصنع أولي (400 عامل)</span>
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsImportExportOpen(true)}
+                  className="p-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold rounded-xl text-xs transition-all cursor-pointer flex items-center justify-between"
+                >
+                  <span>📥 استيراد بيانات من إكسيل (Excel)</span>
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('factory')}
+                  className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl text-xs transition-all cursor-pointer flex items-center justify-between"
+                >
+                  <span>➕ إنشاء وإعداد خطوط جديدة يدوياً</span>
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleRoleToggleInApp('supervisor')}
+                  className="p-3 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 font-bold rounded-xl text-xs transition-all cursor-pointer flex items-center justify-between"
+                >
+                  <span>👷 التبديل إلى وضع مشرف خط</span>
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white p-6 sm:p-10 rounded-3xl border border-slate-200 shadow-xl space-y-5 max-w-xl w-full animate-in fade-in zoom-in-95">
+              <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+                <Cloud className="w-7 h-7" />
+              </div>
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold text-slate-900">
+                  تسجيل الدخول للنظام
+                </h2>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                  سجل دخولك كـ <strong>مدير النظام (Admin)</strong> لإدارة وإنشاء مصنعك الخاص، أو كـ <strong>مشرف خط</strong> للوصول إلى الخطوط والعمال المسندة لإيميلك فقط.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs sm:text-sm shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Cloud className="w-4 h-4" />
+                  <span>تسجيل الدخول (Google Gmail)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleReset400Workers}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs sm:text-sm transition-all cursor-pointer"
+                >
+                  بدء العمل ببيانات تجريبية محلية (400 عامل)
+                </button>
+              </div>
+            </div>
+          )}
         </main>
       ) : (
         <main className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-6 lg:p-8 flex flex-col">
+          {currentUser && (
+            <div className={`mb-3.5 px-3.5 py-2 rounded-xl border flex flex-wrap items-center justify-between gap-2 text-xs no-print shadow-2xs ${
+              currentUser.role === 'admin'
+                ? 'bg-purple-50/90 border-purple-200 text-purple-900'
+                : 'bg-sky-50/90 border-sky-200 text-sky-900'
+            }`}>
+              <div className="flex items-center gap-2">
+                {currentUser.role === 'admin' ? (
+                  <>
+                    <ShieldCheck className="w-4 h-4 text-purple-700 shrink-0" />
+                    <span>
+                      <strong>وضع مدير عام (Admin Workspace):</strong> أنت تشاهد وتتحكم في مصنعك الخاص ({currentUser.email}). بياناتك معزولة ومحمية بالكامل.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <UserCheck className="w-4 h-4 text-sky-700 shrink-0" />
+                    <span>
+                      <strong>وضع مشرف خط (Supervisor Mode):</strong> تعرض فقط الخطوط والعمال المسندة لبريدك ({lines.map(l => l.name).join(', ')}) من قِبل الأدمن المسؤول.
+                    </span>
+                  </>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => handleRoleToggleInApp(currentUser.role === 'admin' ? 'supervisor' : 'admin')}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer bg-white text-slate-800 hover:bg-slate-100 border-slate-300 shadow-2xs"
+              >
+                تبديل إلى {currentUser.role === 'admin' ? 'وضع المشرف 👷' : 'وضع مدير النظام 🛡️'}
+              </button>
+            </div>
+          )}
+
           {activeTab === 'matrix' && (
             <div className="flex-1 flex flex-col min-h-[500px]">
               <SkillsMatrixGrid
@@ -1186,12 +1363,12 @@ export default function App() {
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         currentUser={currentUser}
-        onUserChange={async (user) => {
+        onUserChange={async (user, roleChanged) => {
           setCurrentUser(user);
           try {
             if (user) {
               localStorage.setItem('matrixpro_current_user', JSON.stringify(user));
-              await handlePullFromCloud(user);
+              await handlePullFromCloud(user, user.role);
             } else {
               await handleSignOutUser();
             }

@@ -67,7 +67,7 @@
     },
     "ProductionLine": {
       "title": "ProductionLine",
-      "description": "Production line or department entity with assigned supervisor",
+      "description": "Production line or department entity with assigned supervisor and owner admin",
       "type": "object",
       "properties": {
         "id": {
@@ -78,6 +78,16 @@
         "name": {
           "type": "string",
           "description": "Line name",
+          "maxLength": 128
+        },
+        "adminEmail": {
+          "type": "string",
+          "description": "Admin workspace owner email address",
+          "maxLength": 128
+        },
+        "adminId": {
+          "type": "string",
+          "description": "Admin workspace owner user UID",
           "maxLength": 128
         },
         "supervisorEmail": {
@@ -113,7 +123,7 @@
     },
     "Worker": {
       "title": "Worker",
-      "description": "Factory worker with skill matrix and shift assignment",
+      "description": "Factory worker with skill matrix, line assignment, and admin isolation",
       "type": "object",
       "properties": {
         "id": {
@@ -129,6 +139,21 @@
         "name": {
           "type": "string",
           "description": "Worker full name",
+          "maxLength": 128
+        },
+        "adminEmail": {
+          "type": "string",
+          "description": "Admin workspace owner email",
+          "maxLength": 128
+        },
+        "adminId": {
+          "type": "string",
+          "description": "Admin workspace owner UID",
+          "maxLength": 128
+        },
+        "supervisorEmail": {
+          "type": "string",
+          "description": "Assigned supervisor email",
           "maxLength": 128
         },
         "department": {
@@ -174,9 +199,19 @@
     },
     "PlantSettings": {
       "title": "PlantSettings",
-      "description": "Global plant balancing targets and terminology configuration",
+      "description": "Plant balancing targets, terminology, and leadership configuration scoped per admin",
       "type": "object",
       "properties": {
+        "adminEmail": {
+          "type": "string",
+          "description": "Admin email who owns these settings",
+          "maxLength": 128
+        },
+        "adminId": {
+          "type": "string",
+          "description": "Admin UID who owns these settings",
+          "maxLength": 128
+        },
         "targetWorkersPerStage": {
           "type": "number",
           "description": "Target number of qualified workers per workstation"

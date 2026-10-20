@@ -38,6 +38,8 @@ export interface ProductionLine {
   code: string;
   supervisor: string;
   supervisorEmail?: string; // بريد المشرف على جيميل للتحكم في هذا الخط
+  adminEmail?: string; // بريد الأدمن صاحب المصنع الذي أنشأ هذا الخط
+  adminId?: string; // معرف الأدمن
   models: Model[];
 }
 
@@ -49,6 +51,7 @@ export interface AppUser {
   displayName?: string;
   role: UserRole;
   assignedLineIds: string[]; // الخطوط المخصصة لهذا المشرف
+  assignedAdminEmail?: string; // بريد الأدمن الذي أسند للمشرف هذه الخطوط
 }
 
 export interface Worker {
@@ -62,6 +65,9 @@ export interface Worker {
   skills: Record<string, SkillLevel>; // stageId -> level (0 to 4)
   hireDate: string;
   notes?: string;
+  adminEmail?: string; // بريد الأدمن صاحب المصنع
+  adminId?: string; // معرف الأدمن
+  supervisorEmail?: string; // بريد المشرف المخصص للخط
 }
 
 export interface StageMetric {

@@ -110,23 +110,28 @@ export const LineModelBar: React.FC<LineModelBarProps> = ({
                 {terminology.lineLabel}:
               </span>
               <select
-                value={selectedLine?.id}
+                value={selectedLine?.id || ''}
+                disabled={lines.length === 0}
                 onChange={(e) => {
                   const line = lines.find(l => l.id === e.target.value);
                   if (line) onSelectLine(line);
                 }}
-                className="text-xs sm:text-xs font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer w-full truncate"
+                className="text-xs sm:text-xs font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer w-full truncate disabled:opacity-50"
               >
-                {lines.map((l) => {
-                  const isAssigned = currentUser?.assignedLineIds.includes(l.id) ||
-                    (l.supervisorEmail && l.supervisorEmail.toLowerCase().trim() === (currentUser?.email || '').toLowerCase().trim());
-                  const prefix = isSupervisor ? (isAssigned ? '⭐ ' : '🔒 ') : '';
-                  return (
-                    <option key={l.id} value={l.id}>
-                      {prefix}{formatUnitName(l.name, terminology)}
-                    </option>
-                  );
-                })}
+                {lines.length === 0 ? (
+                  <option value="">(لا توجد خطوط)</option>
+                ) : (
+                  lines.map((l) => {
+                    const isAssigned = currentUser?.assignedLineIds.includes(l.id) ||
+                      (l.supervisorEmail && l.supervisorEmail.toLowerCase().trim() === (currentUser?.email || '').toLowerCase().trim());
+                    const prefix = isSupervisor ? (isAssigned ? '⭐ ' : '🔒 ') : '';
+                    return (
+                      <option key={l.id} value={l.id}>
+                        {prefix}{formatUnitName(l.name, terminology)}
+                      </option>
+                    );
+                  })
+                )}
               </select>
             </div>
 
@@ -137,18 +142,23 @@ export const LineModelBar: React.FC<LineModelBarProps> = ({
                 {terminology.modelLabel}:
               </span>
               <select
-                value={selectedModel?.id}
+                value={selectedModel?.id || ''}
+                disabled={!selectedLine || !selectedLine.models || selectedLine.models.length === 0}
                 onChange={(e) => {
                   const model = selectedLine?.models.find(m => m.id === e.target.value);
                   if (model) onSelectModel(model);
                 }}
-                className="text-xs sm:text-xs font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer w-full truncate"
+                className="text-xs sm:text-xs font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer w-full truncate disabled:opacity-50"
               >
-                {selectedLine?.models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {formatSubUnitName(m.name, terminology)} ({m.code})
-                  </option>
-                ))}
+                {!selectedLine || !selectedLine.models || selectedLine.models.length === 0 ? (
+                  <option value="">(لا توجد موديلات)</option>
+                ) : (
+                  selectedLine.models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {formatSubUnitName(m.name, terminology)} ({m.code})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 

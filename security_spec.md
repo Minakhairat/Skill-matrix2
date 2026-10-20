@@ -3,51 +3,41 @@
 ## 1. Data Invariants
 
 1. **Root Lockdown (Catch-All Deny)**: No document in any collection can be read or written unless governed by an explicit `allow` block.
-2. **Bootstrapped Admin Guarantee**: The primary engineer `minakhairat1@gmail.com` or users with a verified document in `/admins/{uid}` hold administrative authority across all lines, workers, settings, and users.
-3. **Identity & Role Integrity**: A non-admin user cannot self-assign the `admin` role or modify `admins/{uid}` records.
-4. **Line Partitioning & Supervisor Boundaries**: A supervisor whose Google email is assigned to a specific line (`line.supervisorEmail == request.auth.token.email`) can only edit that specific line and the workers belonging to that line (`worker.lineId == lineId`). They cannot alter lines or workers assigned to other supervisors.
-5. **Worker-Line Relationship**: A worker must belong to a valid `lineId` and cannot be moved across lines by a line supervisor unless authorized.
-6. **Immutable Fields**: Document primary identifiers (`id`, `uid`, `lineId`) and creation provenance cannot be tampered with after creation.
-7. **Temporal Integrity**: State update timestamps must be valid strings bounded in length.
-8. **Volumetric Boundaries**: Names, IDs, notes, and strings must observe strict size limits to prevent wallet-draining and denial-of-service payloads.
+2. **Workspace & Admin Isolation**: Every production line, worker, and plant setting belongs to a specific Admin identified by `adminEmail` and `adminId`. An admin can ONLY view, edit, or delete their own workspace data.
+3. **Supervisor Scoping**: A supervisor whose Google email is assigned to a specific line (`line.supervisorEmail == request.auth.token.email`) can ONLY view and update that specific line and its associated workers. They CANNOT see other lines or unassigned lines.
+4. **No Cross-Admin Contamination on Role Switching**: When a supervisor switches to Admin mode, they query only data where `adminEmail == request.auth.token.email`. If they have not created any data as Admin, NO data is returned, preventing any leakage of another Admin's workspace.
+5. **Supervisor Self-Promotion Prevention**: A supervisor cannot promote themselves to access another admin's data, cannot reassign `adminEmail` or `adminId`, and cannot delete lines or workers.
+6. **Immutable Fields**: Document primary identifiers (`id`, `adminEmail`, `adminId`, `lineId`) cannot be altered during updates.
+7. **Temporal & Schema Integrity**: State update timestamps must be valid strings bounded in length. All entities undergo strict schema validation via `isValid[Entity]()`.
+8. **Volumetric Boundaries**: Names, IDs, notes, and strings observe strict size limits to prevent wallet-draining and denial-of-service payloads.
 
 ---
 
 ## 2. The "Dirty Dozen" Adversarial Payloads
 
-The following 12 adversarial test cases represent exploit attempts designed to break Identity, RBAC, Data Integrity, and State Boundaries:
+The following 12 adversarial test cases represent exploit attempts designed to break Identity, RBAC, Multi-Admin Isolation, and State Boundaries:
 
-1. **Payload 1 (Self-Promotion Attack)**: An unprivileged supervisor attempts to write their own UID into `/admins/{myUid}` with `{ "role": "admin" }`.
+1. **Payload 1 (Cross-Admin Workspace Snoop)**: Admin B (`adminB@gmail.com`) attempts to query or read Line documents where `adminEmail == "adminA@gmail.com"`.
    - *Expected*: `PERMISSION_DENIED`
-2. **Payload 2 (Unverified Email Spoofing)**: A user with `email_verified == false` attempts an admin or supervisor write operation.
+2. **Payload 2 (Supervisor Line Hijack)**: Supervisor S attempts to update a line where `supervisorEmail` does NOT match their verified email.
    - *Expected*: `PERMISSION_DENIED`
-3. **Payload 3 (Cross-Line Supervisor Tampering)**: Supervisor of Line 1 (`sup1@plant.com`) attempts to update or delete Line 2 (`/lines/LINE-B`).
+3. **Payload 3 (Supervisor Admin Promotion / Field Escalation)**: A supervisor attempts to update a line by setting `adminEmail` to their own email.
    - *Expected*: `PERMISSION_DENIED`
-4. **Payload 4 (Ghost Field / Shadow Field Injection)**: A user writes a line update containing an undeclared ghost field `{ "__bypassAuth": true }`.
+4. **Payload 4 (Supervisor Deleting Line)**: A supervisor attempts to delete an assigned line document.
    - *Expected*: `PERMISSION_DENIED`
-5. **Payload 5 (Oversized Payload / Denial of Wallet Attack)**: A user writes a worker note with a 50KB junk string exceeding the 500-char boundary.
+5. **Payload 5 (Unassigned Supervisor Access)**: A user in supervisor role attempts to read lines when no admin has added their email to `supervisorEmail`.
+   - *Expected*: `PERMISSION_DENIED` (List returns empty/0 records or denied)
+6. **Payload 6 (Cross-Admin Worker Poisoning)**: Admin B attempts to update or delete workers belonging to `adminEmail == "adminA@gmail.com"`.
    - *Expected*: `PERMISSION_DENIED`
-6. **Payload 6 (Cross-Line Worker Hijack)**: Supervisor of Line 1 attempts to create or edit a worker with `lineId: "LINE-B"` (Line 2).
+7. **Payload 7 (Unverified Email Spoofing)**: A user with `email_verified == false` attempts an admin or supervisor write operation.
    - *Expected*: `PERMISSION_DENIED`
-7. **Payload 7 (Unauthenticated Read Attack)**: An unauthenticated client attempts to query or read documents from `/workers` or `/lines`.
+8. **Payload 8 (Ghost Field / Shadow Field Injection)**: A user writes a line update containing an undeclared ghost field `{ "__bypassAuth": true }`.
    - *Expected*: `PERMISSION_DENIED`
-8. **Payload 8 (Global Settings Defacement)**: A line supervisor attempts to modify `/settings/plant_config` targets or leadership names.
+9. **Payload 9 (Oversized Payload / Denial of Wallet Attack)**: A user writes a worker note with a 50KB junk string exceeding the 500-char boundary.
    - *Expected*: `PERMISSION_DENIED`
-9. **Payload 9 (ID Poisoning Attack)**: A malicious user attempts to target a document with an ID containing path-traversal or invalid characters `/lines/../../malicious`.
-   - *Expected*: `PERMISSION_DENIED`
-10. **Payload 10 (Immutable ID Mutation)**: An update to a worker document attempts to change its immutable `id` or `code`.
+10. **Payload 10 (Immutable Admin Mutation)**: An update to a worker document attempts to change its immutable `adminEmail` or `adminId`.
     - *Expected*: `PERMISSION_DENIED`
 11. **Payload 11 (Audit Log Tampering / Deletion)**: A user attempts to delete or overwrite historical audit log records in `/audit_logs/{logId}`.
     - *Expected*: `PERMISSION_DENIED`
-12. **Payload 12 (Supervisor Privilege Escalation on Line)**: A supervisor attempts to change the `supervisorEmail` field of their own line to transfer ownership to an external rogue email without admin approval.
+12. **Payload 12 (Self-Assigned Admin Escalation in Admins Collection)**: A supervisor attempts to write their own UID into `/admins/{uid}` without pre-approved credentials.
     - *Expected*: `PERMISSION_DENIED`
-
----
-
-## 3. Test Runner Design (`firestore.rules.test.ts`)
-
-The rules enforce:
-- `isAdmin()` verification via `exists(/databases/$(database)/documents/admins/$(request.auth.uid))` or matching bootstrapped admin `minakhairat1@gmail.com` with `email_verified == true`.
-- Line supervisor permission verified via `resource.data.supervisorEmail == request.auth.token.email`.
-- Workers edit permission verified via line lookup: `get(/databases/$(database)/documents/lines/$(resource.data.lineId)).data.supervisorEmail == request.auth.token.email`.
-- Strict schema validation with `isValid[Entity]()` helper functions.

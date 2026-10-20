@@ -252,6 +252,8 @@ export const FactorySetupView: React.FC<FactorySetupViewProps> = ({
         code: lineCode.trim() || `L-${lines.length + 1}`,
         supervisor: lineSupervisor.trim() || 'مشرف جديد',
         supervisorEmail: lineSupervisorEmail.trim().toLowerCase(),
+        adminEmail: currentUser?.email?.toLowerCase().trim() || '',
+        adminId: currentUser?.uid || '',
         models: [
           {
             id: defaultModelId,
