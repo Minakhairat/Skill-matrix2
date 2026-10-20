@@ -178,16 +178,21 @@ export async function verifyAdminStatus(user: FirebaseUser): Promise<boolean> {
 // Resolve user role and assigned lines - querying Firestore directly without stale memory bleed
 export async function resolveUserPermissions(
   user: FirebaseUser,
-  _ignoredMemoryLines?: ProductionLine[],
-  preferredRole?: UserRole
+  preferredRoleOrUndefined?: UserRole,
+  legacyPreferredRole?: UserRole
 ): Promise<AppUser> {
+  const preferredRole = preferredRoleOrUndefined || legacyPreferredRole;
   const normalizedEmail = (user.email || '').toLowerCase().trim();
+  const rawEmail = (user.email || '').trim();
   const assignedSet = new Set<string>();
   let assignedAdminEmail: string | undefined;
 
   // 1. Gather lines assigned to this supervisor from Firestore directly
   try {
-    const linesSnap = await getDocs(query(collection(db, 'lines'), where('supervisorEmail', '==', normalizedEmail)));
+    let linesSnap = await getDocs(query(collection(db, 'lines'), where('supervisorEmail', '==', rawEmail)));
+    if (linesSnap.empty && rawEmail !== normalizedEmail) {
+      linesSnap = await getDocs(query(collection(db, 'lines'), where('supervisorEmail', '==', normalizedEmail)));
+    }
     linesSnap.forEach(d => {
       const data = d.data();
       const lineId = data.id || d.id;
@@ -223,13 +228,16 @@ export async function resolveUserPermissions(
   // 3. Check if user already owns any lines as admin
   let hasAdminLines = false;
   try {
-    const adminLinesSnap = await getDocs(query(collection(db, 'lines'), where('adminEmail', '==', normalizedEmail)));
+    let adminLinesSnap = await getDocs(query(collection(db, 'lines'), where('adminEmail', '==', normalizedEmail)));
+    if (adminLinesSnap.empty && rawEmail !== normalizedEmail) {
+      adminLinesSnap = await getDocs(query(collection(db, 'lines'), where('adminEmail', '==', rawEmail)));
+    }
     hasAdminLines = !adminLinesSnap.empty;
   } catch (e) {
     console.warn('Could not check admin lines in resolveUserPermissions:', e);
   }
 
-  const isDefaultAdmin = DEFAULT_ADMIN_EMAILS.includes(normalizedEmail);
+  const isDefaultAdmin = DEFAULT_ADMIN_EMAILS.includes(normalizedEmail) || DEFAULT_ADMIN_EMAILS.includes(rawEmail);
 
   let role: UserRole;
   if (isDefaultAdmin) {
@@ -239,12 +247,13 @@ export async function resolveUserPermissions(
     role = 'supervisor';
   } else if (hasAdminLines && assigned.length === 0) {
     role = 'admin';
-  } else if (preferredRole && (preferredRole === 'supervisor' ? assigned.length > 0 : hasAdminLines || isDefaultAdmin)) {
+  } else if (preferredRole) {
     role = preferredRole;
   } else if (assigned.length > 0) {
     role = 'supervisor';
   } else {
-    role = userProfileRole || 'admin';
+    // If user has no admin lines and not a default admin, default to supervisor!
+    role = userProfileRole || (hasAdminLines ? 'admin' : 'supervisor');
   }
 
   if (role === 'admin') {
@@ -437,11 +446,19 @@ export async function fetchFullDatasetFromFirestore(
     // If no admin assigned this supervisor to any line, NO data is returned!
     // ------------------------------------------------------------------------
     if (effectiveRole === 'supervisor') {
-      const supervisorLinesQuery = query(
+      const rawEmail = (user.email || '').trim();
+      let linesSnap = await getDocs(query(
         collection(db, 'lines'),
-        where('supervisorEmail', '==', normalizedEmail)
-      );
-      const linesSnap = await getDocs(supervisorLinesQuery);
+        where('supervisorEmail', '==', rawEmail)
+      ));
+      if (linesSnap.empty && rawEmail !== normalizedEmail) {
+        try {
+          linesSnap = await getDocs(query(
+            collection(db, 'lines'),
+            where('supervisorEmail', '==', normalizedEmail)
+          ));
+        } catch (e) {}
+      }
 
       if (linesSnap.empty) {
         // No admin has assigned this supervisor to any lines!
@@ -489,14 +506,18 @@ export async function fetchFullDatasetFromFirestore(
 
       // 2. Fetch workers that belong to the supervisor's assigned lines ONLY
       if (assignedLineIds.length > 0) {
-        const workersQuery = query(
-          collection(db, 'workers'),
-          where('supervisorEmail', '==', normalizedEmail)
-        );
-
         let workersSnap;
         try {
-          workersSnap = await getDocs(workersQuery);
+          workersSnap = await getDocs(query(
+            collection(db, 'workers'),
+            where('supervisorEmail', '==', rawEmail)
+          ));
+          if ((!workersSnap || workersSnap.empty) && rawEmail !== normalizedEmail) {
+            workersSnap = await getDocs(query(
+              collection(db, 'workers'),
+              where('supervisorEmail', '==', normalizedEmail)
+            ));
+          }
         } catch (wErr) {
           console.warn('Could not query workers for supervisor:', wErr);
         }

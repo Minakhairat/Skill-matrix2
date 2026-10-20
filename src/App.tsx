@@ -51,6 +51,7 @@ import { Bot, MessageSquare, Cloud, ShieldCheck, UserCheck, AlertTriangle, Refre
 import { GeminiAIChatView } from './components/GeminiAIChatView';
 import { Footer } from './components/Footer';
 import { calculateWorkerFlexibility } from './utils/matrixCalculations';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
 
 export default function App() {
   // 1. Core State
@@ -172,6 +173,7 @@ export default function App() {
   });
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [cloudSyncSuccessMsg, setCloudSyncSuccessMsg] = useState<string | null>(null);
+  const isOnline = useOnlineStatus();
 
   // Stable refs to prevent loop churn & unnecessary re-subscriptions
   const linesRef = useRef(lines);
@@ -338,7 +340,7 @@ export default function App() {
       hasLoadedUidRef.current = fbUser.uid;
 
       try {
-        const resolved = await resolveUserPermissions(fbUser, undefined, currentUserRef.current?.role);
+        const resolved = await resolveUserPermissions(fbUser, currentUserRef.current?.role);
         setCurrentUser(resolved);
         try {
           localStorage.setItem('matrixpro_current_user', JSON.stringify(resolved));
@@ -699,6 +701,8 @@ export default function App() {
     };
 
     setLines(prev => prev.map(l => l.id === lineId ? updatedLine : l));
+    // Propagate supervisorEmail to workers on this line so they are immediately accessible
+    setWorkers(prev => prev.map(w => w.lineId === lineId ? { ...w, supervisorEmail: normalizedEmail } : w));
 
     if (currentUser) {
       try {
@@ -872,6 +876,13 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900" dir="rtl">
       
+      {!isOnline && (
+        <div className="bg-amber-600 text-white text-xs px-3 py-1.5 font-bold text-center flex items-center justify-center gap-2 no-print animate-in fade-in">
+          <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+          <span>وضع عدم الاتصال بالإنترنت (Offline Mode) — التطبيق يعمل بكامل طاقته محلياً ويحفظ بياناتك بأمان.</span>
+        </div>
+      )}
+
       {/* Top Responsive Navigation Bar */}
       <Header
         activeTab={activeTab}
