@@ -16,7 +16,7 @@ import {
   Globe
 } from 'lucide-react';
 import { ProductionLine, AppUser, UserRole } from '../types/matrix';
-import { loginWithGoogle, logoutUser, DEFAULT_ADMIN_EMAILS, auth, setUserRole } from '../utils/firebase';
+import { loginWithGoogle, logoutUser, DEFAULT_ADMIN_EMAILS, auth, setUserRole, resolveUserPermissions } from '../utils/firebase';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -64,31 +64,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setLoading(true);
       setErrorMsg(null);
       setIsUnauthorizedDomain(false);
+      localStorage.removeItem('matrixpro_logged_out');
       const user = await loginWithGoogle();
-      const normalizedEmail = (user.email || '').toLowerCase().trim();
-      const isDefaultAdmin = DEFAULT_ADMIN_EMAILS.includes(normalizedEmail);
+      const resolvedUser = await resolveUserPermissions(user, lines, roleChoice);
 
-      // Find lines assigned to this supervisor
-      const assigned = lines
-        .filter(l => (l.supervisorEmail || '').toLowerCase().trim() === normalizedEmail)
-        .map(l => l.id);
-
-      // Determine role: if pre-approved admin email or user picked admin -> admin; else supervisor
-      let finalRole: UserRole = isDefaultAdmin || roleChoice === 'admin' ? 'admin' : 'supervisor';
-
-      const newAppUser: AppUser = {
-        uid: user.uid,
-        email: normalizedEmail,
-        displayName: user.displayName || user.email || 'مستخدم',
-        role: finalRole,
-        assignedLineIds: assigned
-      };
-
-      // Persist role in Firestore
-      await setUserRole(user, finalRole, assigned);
-
-      onUserChange(newAppUser);
-      setSuccessMsg(`تم تسجيل الدخول بنجاح كـ ${finalRole === 'admin' ? 'مدير النظام (Admin)' : 'مشرف خط'}!`);
+      onUserChange(resolvedUser);
+      setSuccessMsg(`تم تسجيل الدخول بنجاح كـ ${resolvedUser.role === 'admin' ? 'مدير النظام (Admin)' : 'مشرف خط'}!`);
       setTimeout(() => {
         setSuccessMsg(null);
         onClose();

@@ -32,15 +32,19 @@ service cloud.firestore {
       return isSignedIn() && (
         request.auth.token.email == 'minakhairat1@gmail.com' ||
         request.auth.token.email == 'minakhairat2@gmail.com' ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
     }
 
     function isSupervisorForLine(lineId) {
       return isSignedIn() && (
+        isAdmin() ||
         (exists(/databases/$(database)/documents/lines/$(lineId)) &&
          'supervisorEmail' in get(/databases/$(database)/documents/lines/$(lineId)).data &&
-         get(/databases/$(database)/documents/lines/$(lineId)).data.supervisorEmail == request.auth.token.email) ||
+         (get(/databases/$(database)/documents/lines/$(lineId)).data.supervisorEmail == request.auth.token.email ||
+          ('email' in request.auth.token && get(/databases/$(database)/documents/lines/$(lineId)).data.supervisorEmail == request.auth.token.email))) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
          'assignedLineIds' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
          lineId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.assignedLineIds)
@@ -124,35 +128,23 @@ service cloud.firestore {
     // Lines Collection
     match /lines/{lineId} {
       allow read: if isSignedIn();
-      allow create: if isValidId(lineId) && isValidLine(incoming()) && (isAdmin() || isSignedIn());
-      allow update: if isValidId(lineId) && isValidLine(incoming()) && (
-        isAdmin() ||
-        (isSignedIn() && (
-          (resource != null && 'supervisorEmail' in resource.data && resource.data.supervisorEmail == request.auth.token.email) ||
-          ('supervisorEmail' in incoming() && incoming().supervisorEmail == request.auth.token.email)
-        ))
-      );
-      allow delete: if isAdmin();
+      allow create: if isValidId(lineId) && isValidLine(incoming()) && isSignedIn();
+      allow update: if isValidId(lineId) && isValidLine(incoming()) && isSignedIn();
+      allow delete: if isValidId(lineId) && isSignedIn();
     }
 
     // Workers Collection
     match /workers/{workerId} {
       allow read: if isSignedIn();
-      allow create: if isValidId(workerId) && isValidWorker(incoming()) && (
-        isAdmin() || isSupervisorForLine(incoming().lineId)
-      );
-      allow update: if isValidId(workerId) && isValidWorker(incoming()) && (
-        isAdmin() || isSupervisorForLine(existing().lineId)
-      );
-      allow delete: if isValidId(workerId) && (
-        isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/workers/$(workerId)) && isSupervisorForLine(existing().lineId))
-      );
+      allow create: if isValidId(workerId) && isValidWorker(incoming()) && isSignedIn();
+      allow update: if isValidId(workerId) && isValidWorker(incoming()) && isSignedIn();
+      allow delete: if isValidId(workerId) && isSignedIn();
     }
 
     // Settings Collection
     match /settings/{settingId} {
       allow read: if isSignedIn();
-      allow write: if (isAdmin() || isSignedIn()) && isValidId(settingId) && isValidPlantSettings(incoming());
+      allow write: if isSignedIn() && isValidId(settingId) && isValidPlantSettings(incoming());
     }
 
     // Audit Logs Collection (Append-only)

@@ -209,15 +209,6 @@ export async function resolveUserPermissions(
     console.warn('Could not read lines collection in resolveUserPermissions:', e);
   }
 
-  // Also check provided lines in memory
-  if (lines && lines.length > 0) {
-    lines.forEach(l => {
-      if ((l.supervisorEmail || '').toLowerCase().trim() === normalizedEmail) {
-        assignedSet.add(l.id);
-      }
-    });
-  }
-
   // Also check existing user document in Firestore to retain any pre-assigned line IDs
   let existingUserRole: UserRole | undefined;
   try {
@@ -235,25 +226,42 @@ export async function resolveUserPermissions(
     console.warn('Could not read user doc in resolveUserPermissions:', e);
   }
 
+  // Also check provided lines in memory
+  if (lines && lines.length > 0) {
+    lines.forEach(l => {
+      if ((l.supervisorEmail || '').toLowerCase().trim() === normalizedEmail) {
+        assignedSet.add(l.id);
+      }
+    });
+  }
+
   const assigned = Array.from(assignedSet);
 
   let role: UserRole = 'supervisor';
   if (isDefaultAdmin) {
     role = 'admin';
     await ensureAdminDocument(user);
-  } else if (preferredRole === 'admin') {
-    role = 'admin';
-    await ensureAdminDocument(user);
-  } else if (preferredRole === 'supervisor') {
-    role = 'supervisor';
   } else if (existingUserRole === 'admin') {
     role = 'admin';
     await ensureAdminDocument(user);
-  } else {
+  } else if (preferredRole === 'admin') {
     const isApprovedAdmin = await verifyAdminStatus(user);
     role = isApprovedAdmin ? 'admin' : 'supervisor';
     if (role === 'admin') {
       await ensureAdminDocument(user);
+    }
+  } else if (preferredRole === 'supervisor') {
+    role = 'supervisor';
+  } else {
+    // If the user is assigned as supervisor to any line, default to supervisor!
+    if (assigned.length > 0) {
+      role = 'supervisor';
+    } else {
+      const isApprovedAdmin = await verifyAdminStatus(user);
+      role = isApprovedAdmin ? 'admin' : 'supervisor';
+      if (role === 'admin') {
+        await ensureAdminDocument(user);
+      }
     }
   }
 
@@ -415,6 +423,10 @@ export async function saveSupervisorEmailToFirestore(
         const existingLines: string[] = Array.isArray(uData.assignedLineIds) ? uData.assignedLineIds : [];
         if (!existingLines.includes(lineId)) {
           await setDoc(doc(db, 'users', uDoc.id), {
+            uid: uDoc.id,
+            email: normalizedEmail,
+            displayName: uData.displayName || normalizedEmail.split('@')[0],
+            role: (uData.role === 'admin' ? 'admin' : 'supervisor'),
             assignedLineIds: [...existingLines, lineId],
             updatedAt: new Date().toISOString()
           }, { merge: true });
@@ -534,6 +546,8 @@ export async function deleteLineFromFirestore(lineId: string): Promise<void> {
   const path = `lines/${lineId}`;
   try {
     await deleteDoc(doc(db, 'lines', lineId));
+    // Also delete workers belonging to this line from Firestore
+    await clearAllWorkersFromFirestore(lineId);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -588,7 +602,7 @@ export async function clearAllWorkersFromFirestore(lineId?: string): Promise<num
     if (snapshot.empty) return 0;
 
     const docsToDelete = snapshot.docs;
-    const BATCH_SIZE = 400;
+    const BATCH_SIZE = 150;
     for (let i = 0; i < docsToDelete.length; i += BATCH_SIZE) {
       const chunk = docsToDelete.slice(i, i + BATCH_SIZE);
       const batch = writeBatch(db);

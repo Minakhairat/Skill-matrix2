@@ -245,11 +245,11 @@ export const LineModelBar: React.FC<LineModelBarProps> = ({
                   <button
                     type="button"
                     onClick={handleOpenSupervisorModal}
-                    className="flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-lg border border-indigo-200 transition-colors cursor-pointer"
-                    title="تأكيد وتسجيل إيميل المشرف الخاص بهذا الخط"
+                    className="flex items-center gap-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 px-3 py-1.5 rounded-lg shadow-xs transition-all cursor-pointer"
+                    title="تأكيد وتسجيل إيميل المشرف الخاص بهذا الخط في السحابة أونلاين"
                   >
-                    <ShieldCheck className="w-3 h-3 text-indigo-600" />
-                    <span>تأكيد إيميل المشرف</span>
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>تأكيد تسجيل إيميل المشرف</span>
                   </button>
                 )}
               </div>

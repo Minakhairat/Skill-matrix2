@@ -56,8 +56,13 @@ export default function App() {
   // 1. Core State
   const [lines, setLines] = useState<ProductionLine[]>(() => {
     try {
+      const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('matrixpro_logged_out') === 'true';
+      if (isLoggedOut) return [];
       const saved = localStorage.getItem(STORAGE_KEY_LINES);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch (e) {
       console.error('Failed to parse saved lines', e);
     }
@@ -66,8 +71,13 @@ export default function App() {
 
   const [workers, setWorkers] = useState<Worker[]>(() => {
     try {
+      const isLoggedOut = typeof window !== 'undefined' && localStorage.getItem('matrixpro_logged_out') === 'true';
+      if (isLoggedOut) return [];
       const saved = localStorage.getItem(STORAGE_KEY_WORKERS);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch (e) {
       console.error('Failed to parse saved workers', e);
     }
@@ -165,6 +175,7 @@ export default function App() {
   const loadCloudDataForUser = useCallback(async (user: AppUser) => {
     setIsCloudSyncing(true);
     try {
+      localStorage.removeItem('matrixpro_logged_out');
       const dataset = await fetchFullDatasetFromFirestore();
       if (dataset.hasData && dataset.lines.length > 0) {
         setLines(dataset.lines);
@@ -177,16 +188,26 @@ export default function App() {
         if (dataset.terminology) setTerminology(dataset.terminology);
         if (dataset.leadership) setLeadership(dataset.leadership);
 
-        // Supervisor line selection
+        // Supervisor line matching from cloud lines
         const userAssigned = dataset.lines.filter(l => 
           (l.supervisorEmail || '').toLowerCase().trim() === user.email.toLowerCase().trim() ||
           user.assignedLineIds.includes(l.id)
         ).map(l => l.id);
 
-        if (user.role === 'supervisor') {
-          if (userAssigned.length > 0) {
-            setSelectedLineId(userAssigned[0]);
-            const targetLine = dataset.lines.find(l => l.id === userAssigned[0]);
+        const allAssigned = Array.from(new Set([...user.assignedLineIds, ...userAssigned]));
+        const updatedUser: AppUser = {
+          ...user,
+          assignedLineIds: allAssigned
+        };
+        setCurrentUser(updatedUser);
+        try {
+          localStorage.setItem('matrixpro_current_user', JSON.stringify(updatedUser));
+        } catch (e) {}
+
+        if (updatedUser.role === 'supervisor') {
+          if (allAssigned.length > 0) {
+            setSelectedLineId(allAssigned[0]);
+            const targetLine = dataset.lines.find(l => l.id === allAssigned[0]);
             if (targetLine && targetLine.models.length > 0) {
               setSelectedModelId(targetLine.models[0].id);
             }
@@ -201,7 +222,7 @@ export default function App() {
         setCloudSyncSuccessMsg(`تم استرجاع ومزامنة البيانات السحابية بنجاح (${dataset.workers.length} عامل و ${dataset.lines.length} خطوط) ✓`);
         setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
       } else {
-        // Cloud is empty, initialize default if user is admin
+        // Cloud is empty, initialize default if user is admin and push to cloud!
         if (user.role === 'admin') {
           const freshLines = generateInitialLines();
           const freshWorkers = generate400Workers(freshLines);
@@ -209,6 +230,20 @@ export default function App() {
           setWorkers(freshWorkers);
           setSelectedLineId(freshLines[0].id);
           setSelectedModelId(freshLines[0].models[0].id);
+
+          syncFullDatasetToFirestore({
+            lines: freshLines,
+            workers: freshWorkers,
+            settings: { targetWorkersPerStage, targetStagesPerWorker, minQualifiedLevel },
+            terminology,
+            leadership
+          }).then(res => {
+            setCloudSyncSuccessMsg(`تمت تهيئة قاعدة البيانات السحابية ورفع ${res.workersCount} عامل أونلاين بنجاح ✓`);
+            setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
+          }).catch(err => console.warn('Could not auto-seed cloud data:', err));
+        } else {
+          setCloudSyncSuccessMsg('قاعدة البيانات السحابية فارغة حالياً. يرجى من الأدمن تسجيل الدخول ورفع بيانات المصنع.');
+          setTimeout(() => setCloudSyncSuccessMsg(null), 5000);
         }
       }
     } catch (e: any) {
@@ -216,7 +251,7 @@ export default function App() {
     } finally {
       setIsCloudSyncing(false);
     }
-  }, []);
+  }, [targetWorkersPerStage, targetStagesPerWorker, minQualifiedLevel, terminology, leadership]);
 
   // Complete Signout Handler: wipes all browser storage & state clean
   const handleSignOutUser = async () => {
@@ -227,13 +262,16 @@ export default function App() {
     }
     // 1. Wipe auth user
     setCurrentUser(null);
-    // 2. Wipe browser local storage completely
+    // 2. Mark explicit logged out flag and wipe browser local storage completely
     try {
+      localStorage.setItem('matrixpro_logged_out', 'true');
       localStorage.removeItem('matrixpro_current_user');
       localStorage.removeItem(STORAGE_KEY_WORKERS);
       localStorage.removeItem(STORAGE_KEY_LINES);
       localStorage.removeItem(STORAGE_KEY_SETTINGS);
       localStorage.removeItem(STORAGE_KEY_HISTORY);
+      localStorage.removeItem(STORAGE_KEY_TERMINOLOGY);
+      localStorage.removeItem(STORAGE_KEY_LEADERSHIP);
     } catch (e) {}
 
     // 3. Reset React state to empty/clean slate
@@ -250,7 +288,8 @@ export default function App() {
   useEffect(() => {
     testConnection();
     const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
+      const isLoggedOut = localStorage.getItem('matrixpro_logged_out') === 'true';
+      if (fbUser && !isLoggedOut) {
         const resolved = await resolveUserPermissions(fbUser, lines, currentUser?.role);
         setCurrentUser(resolved);
         try {
@@ -291,9 +330,11 @@ export default function App() {
     }
   }, [currentUser, selectedLineId]);
 
-  // Persistence to LocalStorage
+  // Persistence to LocalStorage (only when not in explicit logged-out state)
   useEffect(() => {
     try {
+      const isLoggedOut = localStorage.getItem('matrixpro_logged_out') === 'true';
+      if (isLoggedOut || workers.length === 0) return;
       localStorage.setItem(STORAGE_KEY_WORKERS, JSON.stringify(workers));
     } catch (e) {
       console.warn('LocalStorage limit reached or disabled', e);
@@ -302,6 +343,8 @@ export default function App() {
 
   useEffect(() => {
     try {
+      const isLoggedOut = localStorage.getItem('matrixpro_logged_out') === 'true';
+      if (isLoggedOut || lines.length === 0) return;
       localStorage.setItem(STORAGE_KEY_LINES, JSON.stringify(lines));
     } catch (e) {
       console.warn('LocalStorage error', e);
@@ -523,14 +566,6 @@ export default function App() {
 
   const handleDeleteWorker = async (workerId: string) => {
     const targetWorker = workers.find(w => w.id === workerId);
-    setWorkers(prev => prev.filter(w => w.id !== workerId));
-    if (targetWorker) {
-      logAction(
-        'worker_deleted',
-        `حذف العامل ${targetWorker.name}`,
-        `تم حذف العامل ${targetWorker.name} (${targetWorker.empCode}) وكافة تقييماته نهائياً من النظام وقاعدة البيانات السحابية.`
-      );
-    }
     setWorkerToDelete(null);
     if (selectedWorkerForModal?.id === workerId) {
       setSelectedWorkerForModal(null);
@@ -539,33 +574,70 @@ export default function App() {
     if (currentUser) {
       try {
         await deleteWorkerFromFirestore(workerId);
+        setWorkers(prev => prev.filter(w => w.id !== workerId));
+        if (targetWorker) {
+          logAction(
+            'worker_deleted',
+            `حذف العامل ${targetWorker.name}`,
+            `تم حذف العامل ${targetWorker.name} (${targetWorker.empCode}) وكافة تقييماته نهائياً من النظام وقاعدة البيانات السحابية (Firestore).`
+          );
+        }
         setCloudSyncSuccessMsg(`تم حذف العامل (${targetWorker?.name || workerId}) بنجاح من قاعدة البيانات السحابية (Firestore) ✓`);
         setTimeout(() => setCloudSyncSuccessMsg(null), 3000);
       } catch (err: any) {
-        console.warn('Could not delete worker from Firestore:', err);
+        console.error('Could not delete worker from Firestore:', err);
+        alert('تعذر حذف العامل من قاعدة البيانات السحابية: ' + (err?.message || 'خطأ في الاتصال أو الصلاحيات'));
+      }
+    } else {
+      setWorkers(prev => prev.filter(w => w.id !== workerId));
+      if (targetWorker) {
+        logAction(
+          'worker_deleted',
+          `حذف العامل ${targetWorker.name}`,
+          `تم حذف العامل ${targetWorker.name} (${targetWorker.empCode}) محلياً من المتصفح.`
+        );
       }
     }
   };
 
   const handleClearAllData = async () => {
-    const countBefore = workers.length;
-    setWorkers([]);
-    logAction(
-      'all_cleared',
-      'مسح شامل لكافة بيانات العمال',
-      'تم مسح كافة سجلات العمال ومصفوفة المهارات بالكامل من المتصفح وقاعدة البيانات السحابية.'
-    );
-
     if (currentUser) {
       try {
-        const targetLineId = currentUser.role === 'supervisor' ? selectedLineId : undefined;
+        const isSupervisor = currentUser.role === 'supervisor';
+        const targetLineId = isSupervisor ? selectedLineId : undefined;
+        const lineName = lines.find(l => l.id === selectedLineId)?.name || 'الخط';
+
         const deletedCount = await clearAllWorkersFromFirestore(targetLineId);
-        setCloudSyncSuccessMsg(`تم حذف ${deletedCount ?? countBefore} عامل نهائياً من قاعدة بيانات Firestore أونلاين ✓`);
+
+        if (isSupervisor) {
+          setWorkers(prev => prev.filter(w => w.lineId !== selectedLineId));
+          setCloudSyncSuccessMsg(`تم مسح عمال ${lineName} (${deletedCount} عامل) نهائياً من سحابة Firestore أونلاين ومن المتصفح ✓`);
+          logAction(
+            'all_cleared',
+            `مسح عمال ${lineName}`,
+            `تم مسح كافة عمال ${lineName} (${deletedCount} عامل) نهائياً من قاعدة بيانات Firestore وسجلات المتصفح.`
+          );
+        } else {
+          setWorkers([]);
+          setCloudSyncSuccessMsg(`تم حذف جميع عمال المصنع (${deletedCount} عامل) نهائياً من قاعدة بيانات Firestore أونلاين والمتصفح ✓`);
+          logAction(
+            'all_cleared',
+            'مسح شامل لكافة بيانات العمال',
+            `تم مسح كافة سجلات العمال ومصفوفة المهارات بالكامل (${deletedCount} عامل) من المتصفح وقاعدة البيانات السحابية.`
+          );
+        }
         setTimeout(() => setCloudSyncSuccessMsg(null), 4000);
       } catch (err: any) {
         console.error('Failed to clear workers from Firestore:', err);
-        alert('تعذر مسح البيانات من السحابة: ' + (err?.message || ''));
+        alert('تعذر مسح البيانات من السحابة: ' + (err?.message || 'خطأ صلاحيات'));
       }
+    } else {
+      setWorkers([]);
+      logAction(
+        'all_cleared',
+        'مسح شامل لكافة بيانات العمال محلياً',
+        'تم مسح سجلات العمال من المتصفح.'
+      );
     }
   };
 
@@ -724,6 +796,7 @@ export default function App() {
   };
 
   const handleUpdateLines = (newLines: ProductionLine[]) => {
+    const removedLines = lines.filter(oldLine => !newLines.some(nl => nl.id === oldLine.id));
     setLines(newLines);
     logAction(
       'target_changed',
@@ -731,6 +804,11 @@ export default function App() {
       `تم حفظ التغييرات على قائمة ${terminology.lineLabelPlural} و ${terminology.modelLabelPlural} و ${terminology.stageLabelPlural}.`
     );
     if (currentUser) {
+      // 1. Delete removed lines & their workers from Firestore
+      for (const rem of removedLines) {
+        deleteLineFromFirestore(rem.id).catch(err => console.warn('Could not delete line from Firestore:', err));
+      }
+      // 2. Sync remaining lines
       for (const line of newLines) {
         const isPermitted = currentUser.role === 'admin' || 
           currentUser.assignedLineIds.includes(line.id) ||
@@ -1104,6 +1182,9 @@ export default function App() {
         onConfirmDeleteWorker={handleDeleteWorker}
         isClearAllMode={isClearAllModalOpen}
         onConfirmClearAll={handleClearAllData}
+        currentUser={currentUser}
+        lineName={selectedLine?.name || terminology.lineLabel}
+        terminology={terminology}
       />
 
       <HistoryModal

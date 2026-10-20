@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AlertTriangle, Trash2, X, AlertOctagon } from 'lucide-react';
-import { Worker } from '../types/matrix';
+import { Worker, AppUser, TerminologyConfig } from '../types/matrix';
 
 interface ConfirmDeleteModalProps {
   isOpen: boolean;
@@ -9,6 +9,9 @@ interface ConfirmDeleteModalProps {
   onConfirmDeleteWorker?: (workerId: string) => void | Promise<void>;
   isClearAllMode?: boolean;
   onConfirmClearAll?: () => void | Promise<void>;
+  currentUser?: AppUser | null;
+  lineName?: string;
+  terminology?: TerminologyConfig;
 }
 
 export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
@@ -17,11 +20,16 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
   workerToDelete,
   onConfirmDeleteWorker,
   isClearAllMode = false,
-  onConfirmClearAll
+  onConfirmClearAll,
+  currentUser,
+  lineName = 'خط الإنتاج',
+  terminology
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
 
   if (!isOpen) return null;
+
+  const isSupervisor = currentUser?.role === 'supervisor';
 
   const handleConfirm = async () => {
     try {
@@ -53,10 +61,14 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm sm:text-base font-bold text-white">
-                {isClearAllMode ? 'حذف كافة البيانات بالكامل من السحابة والمتصفح' : 'تأكيد حذف العامل أونلاين'}
+                {isClearAllMode 
+                  ? (isSupervisor ? `تأكيد مسح عمال ${lineName} أونلاين` : 'حذف كافة البيانات بالكامل من السحابة والمتصفح') 
+                  : 'تأكيد حذف العامل أونلاين'}
               </h3>
               <p className="text-[11px] text-slate-300 mt-0.5">
-                {isClearAllMode ? 'إجراء حرج سيحذف البيانات من المتصفح وقاعدة بيانات Firestore' : 'سيتم حذف العامل وتقييماته من النظام وسحابة Firestore'}
+                {isClearAllMode 
+                  ? (isSupervisor ? `سيتم مسح عمال ${lineName} فقط من المتصفح وسحابة Firestore` : 'إجراء حرج سيحذف كافة عمال المصنع من المتصفح وقاعدة بيانات Firestore') 
+                  : 'سيتم حذف العامل وتقييماته نهائياً من النظام وسحابة Firestore'}
               </p>
             </div>
           </div>
@@ -77,14 +89,18 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
               <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 leading-relaxed space-y-1">
                 <div className="font-bold flex items-center gap-1.5 text-rose-950">
                   <AlertOctagon className="w-4 h-4 text-rose-700" />
-                  <span>تحذير هام ومسح شامل:</span>
+                  <span>{isSupervisor ? `تنبيه مسح عمال ${lineName}:` : 'تحذير هام ومسح شامل للمصنع:'}</span>
                 </div>
                 <p>
-                  سيؤدي هذا الإجراء إلى حذف جميع سجلات العمال ومصفوفة المهارات <strong>من المتصفح ومن قاعدة البيانات السحابية (Firestore أونلاين)</strong> فوراً وبشكل نهائي.
+                  {isSupervisor 
+                    ? `سيؤدي هذا الإجراء إلى حذف جميع عمال ${lineName} وتقييماتهم من المتصفح وقاعدة بيانات Firestore أونلاين فوراً وبشكل نهائي.`
+                    : 'سيؤدي هذا الإجراء إلى حذف جميع سجلات العمال ومصفوفة المهارات من المتصفح ومن قاعدة البيانات السحابية (Firestore أونلاين) فوراً وبشكل نهائي.'}
                 </p>
               </div>
               <p className="text-xs text-slate-600">
-                إذا أردت البدء من جديد بمصفوفة فارغة تماماً، اضغط على زر "نعم، حذف كافة البيانات". يمكنك دائماً استعادة الـ 400 عامل التجريبيين أو استيراد ملف إكسيل في أي وقت.
+                {isSupervisor 
+                  ? 'يمكنك بعد الحذف إضافة عمال جدد أو رفع ملف إكسيل خاص بهذا الخط في أي وقت.'
+                  : 'إذا أردت البدء من جديد بمصفوفة فارغة تماماً، اضغط على زر الحذف. يمكنك دائماً استعادة الـ 400 عامل التجريبيين أو استيراد ملف إكسيل.'}
               </p>
             </div>
           ) : (
@@ -131,7 +147,9 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
             <span>
               {isDeleting 
                 ? 'جارٍ الحذف من السحابة...' 
-                : (isClearAllMode ? 'نعم، حذف كافة البيانات أونلاين' : 'حذف العامل نهائياً')}
+                : (isClearAllMode 
+                    ? (isSupervisor ? `نعم، حذف عمال ${lineName} أونلاين` : 'نعم، حذف كافة البيانات أونلاين') 
+                    : 'حذف العامل نهائياً')}
             </span>
           </button>
         </div>
